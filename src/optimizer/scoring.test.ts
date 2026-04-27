@@ -44,38 +44,86 @@ describe('formula', () => {
 describe('applyLineBonuses', () => {
   it('does nothing at L=0', () => {
     const s = zeroStats()
-    applyLineBonuses(s, 0)
+    applyLineBonuses(s, 0, 0)
     expect(s).toEqual(zeroStats())
   })
   it('L=1 adds +10 toWeakened', () => {
     const s = zeroStats()
-    applyLineBonuses(s, 1)
+    applyLineBonuses(s, 1, 0)
     expect(s.toWeakened).toBe(10)
     expect(s.critDamage).toBe(0)
   })
   it('L=2 behaves the same as L=1', () => {
     const s = zeroStats()
-    applyLineBonuses(s, 2)
+    applyLineBonuses(s, 2, 0)
     expect(s.toWeakened).toBe(10)
     expect(s.critDamage).toBe(0)
   })
   it('L=3 adds +15 toWeakened and +20 critDamage cumulatively', () => {
     const s = zeroStats()
-    applyLineBonuses(s, 3)
+    applyLineBonuses(s, 3, 0)
     expect(s.toWeakened).toBe(25)
     expect(s.critDamage).toBe(20)
   })
   it('L=4 adds +35 critDamage cumulatively (total crit +55, weakened +25)', () => {
     const s = zeroStats()
-    applyLineBonuses(s, 4)
+    applyLineBonuses(s, 4, 0)
     expect(s.toWeakened).toBe(25)
     expect(s.critDamage).toBe(55)
   })
-  it('L=5+ does not scale further', () => {
+  it('mount level 0 caps at L=4 (higher line counts add nothing)', () => {
     const s = zeroStats()
-    applyLineBonuses(s, 8)
+    applyLineBonuses(s, 8, 0)
     expect(s.toWeakened).toBe(25)
     expect(s.critDamage).toBe(55)
+    expect(s.laceration).toBe(0)
+  })
+  it('mount level 2 unlocks the 5-line bonus (+10 laceration)', () => {
+    const s = zeroStats()
+    applyLineBonuses(s, 5, 2)
+    expect(s.toWeakened).toBe(25)
+    expect(s.critDamage).toBe(55)
+    expect(s.laceration).toBe(10)
+  })
+  it('mount level 1 still locks the 5-line bonus', () => {
+    const s = zeroStats()
+    applyLineBonuses(s, 5, 1)
+    expect(s.laceration).toBe(0)
+  })
+  it('L=6 with mount level 4 adds +20 toWeakened and +55 critDamage cumulatively', () => {
+    const s = zeroStats()
+    applyLineBonuses(s, 6, 4)
+    expect(s.toWeakened).toBe(45)
+    expect(s.critDamage).toBe(110)
+    expect(s.laceration).toBe(10)
+  })
+  it('L=6 with mount level 3 still locks the 6-line tier', () => {
+    const s = zeroStats()
+    applyLineBonuses(s, 6, 3)
+    expect(s.toWeakened).toBe(25)
+    expect(s.critDamage).toBe(55)
+    expect(s.laceration).toBe(10)
+  })
+  it('L=7 with mount level 6 adds +35 toWeakened and +90 critDamage cumulatively', () => {
+    const s = zeroStats()
+    applyLineBonuses(s, 7, 6)
+    expect(s.toWeakened).toBe(80)
+    expect(s.critDamage).toBe(200)
+    expect(s.laceration).toBe(10)
+  })
+  it('L=8 with mount level 8 adds the final +20 laceration cumulatively', () => {
+    const s = zeroStats()
+    applyLineBonuses(s, 8, 8)
+    expect(s.toWeakened).toBe(80)
+    expect(s.critDamage).toBe(200)
+    expect(s.laceration).toBe(30)
+  })
+  it('L=8 with mount level 7 locks the 8-line tier', () => {
+    const s = zeroStats()
+    applyLineBonuses(s, 8, 7)
+    expect(s.toWeakened).toBe(80)
+    expect(s.critDamage).toBe(200)
+    expect(s.laceration).toBe(10)
   })
 })
 
@@ -90,7 +138,7 @@ describe('scoreLayout', () => {
     const current = zeroStats()
     const buff = BUFF_TABLE.good.critDamage // 8
     // no lines filled
-    const score = scoreLayout(current, [piece], 0)
+    const score = scoreLayout(current, [piece], 0, 0)
     expect(score).toBeCloseTo(1 + buff / 100, 10)
   })
 })

@@ -1,44 +1,53 @@
 import { useMemo, useState } from 'react'
 import { CurrentStatsPanel } from './components/CurrentStatsPanel'
 import { PieceInventory } from './components/PieceInventory'
+import { MountPanel } from './components/MountPanel'
 import { OptimizerPanel } from './components/OptimizerPanel'
 import type { FullTimeLimit } from './components/OptimizerPanel'
 import { BoardView } from './components/BoardView'
 import { StatsSummary } from './components/StatsSummary'
 import { PieceCard } from './components/PieceCard'
 import { PanelShell } from './components/PanelShell'
+import {
+  MAX_MOUNT_LEVEL,
+  maxBonusLinesForLevel,
+  type MountLevel,
+} from './data/lineBonuses'
 import { QUALITIES } from './data/qualities'
 import { SHAPE_KEYS } from './data/shapes'
 import { STAT_KEYS, zeroStats } from './data/stats'
 import type { OptimizerMode, Piece, StatTotals } from './data/types'
 import { usePersistedState } from './hooks/usePersistedState'
 import { useOptimizer } from './hooks/useOptimizer'
-import { formula } from './optimizer/scoring'
+import { finalizeStats, formula } from './optimizer/scoring'
 
 const STATS_KEY = 'mount-opt:current-stats:v1'
 const PIECES_KEY = 'mount-opt:pieces:v1'
 const MODE_KEY = 'mount-opt:mode:v1'
+const MOUNT_LEVEL_KEY = 'mount-opt:mount-level:v1'
 const FULL_LIMIT_KEY = 'mount-opt:full-time-limit:v1'
 const PROFILES_KEY = 'mount-opt:profiles:v1'
 const EXPORT_PREFIX_V1 = 'mount-opt:v1:'
 const EXPORT_PREFIX_V2 = 'mount-opt:v2:'
+const EXPORT_PREFIX_V3 = 'mount-opt:v3:'
 
-interface ExportedConfigV1 {
-  version: 1
+interface ExportedConfig {
   currentStats: StatTotals
   pieces: Piece[]
   mode: OptimizerMode
+  mountLevel: MountLevel
   fullTimeLimit: FullTimeLimit
 }
 
 type CompactMode = 'n' | 'f'
 type CompactPiece = [shape: Piece['shape'], quality: Piece['quality'], stat: Piece['stat']]
 
-interface ExportedConfigV2 {
-  version: 2
+interface ExportedConfigV3 {
+  version: 3
   s: number[]
   p: CompactPiece[]
   m: CompactMode
+  l: number
   t: [enabled: 0 | 1, seconds: number]
 }
 
@@ -62,17 +71,27 @@ function base64ToBytes(base64: string): Uint8Array {
   return out
 }
 
-function encodeConfig(config: ExportedConfigV1): string {
-  const compact: ExportedConfigV2 = {
-    version: 2,
+function encodeConfig(config: ExportedConfig): string {
+  const compact: ExportedConfigV3 = {
+    version: 3,
     s: STAT_KEYS.map((key) => config.currentStats[key]),
     p: config.pieces.map((piece) => [piece.shape, piece.quality, piece.stat]),
     m: config.mode === 'normal' ? 'n' : 'f',
+    l: config.mountLevel,
     t: [config.fullTimeLimit.enabled ? 1 : 0, config.fullTimeLimit.seconds],
   }
   const json = JSON.stringify(compact)
   const base64 = bytesToBase64(new TextEncoder().encode(json))
-  return `${EXPORT_PREFIX_V2}${base64}`
+  return `${EXPORT_PREFIX_V3}${base64}`
+}
+
+function isMountLevel(value: unknown): value is MountLevel {
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= MAX_MOUNT_LEVEL
+  )
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -106,63 +125,83 @@ function isFullTimeLimit(value: unknown): value is FullTimeLimit {
   )
 }
 
-function decodeConfig(raw: string): ExportedConfigV1 {
+function decodeCompactPayload(
+  parsed: Record<string, unknown>,
+  expectedVersion: 2 | 3,
+): ExportedConfig {
+  const validShape =
+    parsed.version === expectedVersion &&
+    Array.isArray(parsed.s) &&
+    parsed.s.length === STAT_KEYS.length &&
+    parsed.s.every((value) => isFiniteNumber(value)) &&
+    Array.isArray(parsed.p) &&
+    parsed.p.every((piece) => {
+      if (!Array.isArray(piece) || piece.length !== 3) return false
+      const [shape, quality, stat] = piece
+      return (
+        SHAPE_KEYS.includes(shape as (typeof SHAPE_KEYS)[number]) &&
+        QUALITIES.some((q) => q.key === quality) &&
+        STAT_KEYS.includes(stat as (typeof STAT_KEYS)[number])
+      )
+    }) &&
+    (parsed.m === 'n' || parsed.m === 'f') &&
+    Array.isArray(parsed.t) &&
+    parsed.t.length === 2 &&
+    (parsed.t[0] === 0 || parsed.t[0] === 1) &&
+    isFiniteNumber(parsed.t[1]) &&
+    parsed.t[1] >= 1
+
+  if (!validShape) throw new Error('Import string data is invalid.')
+
+  let mountLevel: MountLevel = 0
+  if (expectedVersion === 3) {
+    if (!isMountLevel(parsed.l)) {
+      throw new Error('Import string data is invalid.')
+    }
+    mountLevel = parsed.l
+  }
+
+  const statValues = parsed.s as number[]
+  const compactPieces = parsed.p as CompactPiece[]
+  const [enabledFlag, seconds] = parsed.t as [0 | 1, number]
+
+  const currentStats = STAT_KEYS.reduce<StatTotals>((acc, key, index) => {
+    acc[key] = statValues[index]
+    return acc
+  }, zeroStats())
+
+  const pieces: Piece[] = compactPieces.map(([shape, quality, stat]) => ({
+    id: crypto.randomUUID(),
+    shape,
+    quality,
+    stat,
+  }))
+
+  return {
+    currentStats,
+    pieces,
+    mode: parsed.m === 'n' ? 'normal' : 'full',
+    mountLevel,
+    fullTimeLimit: {
+      enabled: enabledFlag === 1,
+      seconds,
+    },
+  }
+}
+
+function decodeConfig(raw: string): ExportedConfig {
+  if (raw.startsWith(EXPORT_PREFIX_V3)) {
+    const payload = raw.slice(EXPORT_PREFIX_V3.length).trim()
+    const json = new TextDecoder().decode(base64ToBytes(payload))
+    const parsed = JSON.parse(json) as Record<string, unknown>
+    return decodeCompactPayload(parsed, 3)
+  }
+
   if (raw.startsWith(EXPORT_PREFIX_V2)) {
     const payload = raw.slice(EXPORT_PREFIX_V2.length).trim()
     const json = new TextDecoder().decode(base64ToBytes(payload))
     const parsed = JSON.parse(json) as Record<string, unknown>
-
-    if (
-      parsed.version !== 2 ||
-      !Array.isArray(parsed.s) ||
-      parsed.s.length !== STAT_KEYS.length ||
-      !parsed.s.every((value) => isFiniteNumber(value)) ||
-      !Array.isArray(parsed.p) ||
-      !parsed.p.every((piece) => {
-        if (!Array.isArray(piece) || piece.length !== 3) return false
-        const [shape, quality, stat] = piece
-        return (
-          SHAPE_KEYS.includes(shape as (typeof SHAPE_KEYS)[number]) &&
-          QUALITIES.some((q) => q.key === quality) &&
-          STAT_KEYS.includes(stat as (typeof STAT_KEYS)[number])
-        )
-      }) ||
-      (parsed.m !== 'n' && parsed.m !== 'f') ||
-      !Array.isArray(parsed.t) ||
-      parsed.t.length !== 2 ||
-      (parsed.t[0] !== 0 && parsed.t[0] !== 1) ||
-      !isFiniteNumber(parsed.t[1]) ||
-      parsed.t[1] < 1
-    ) {
-      throw new Error('Import string data is invalid.')
-    }
-
-    const statValues = parsed.s as number[]
-    const compactPieces = parsed.p as CompactPiece[]
-    const [enabledFlag, seconds] = parsed.t as [0 | 1, number]
-
-    const currentStats = STAT_KEYS.reduce<StatTotals>((acc, key, index) => {
-      acc[key] = statValues[index]
-      return acc
-    }, zeroStats())
-
-    const pieces: Piece[] = compactPieces.map(([shape, quality, stat]) => ({
-      id: crypto.randomUUID(),
-      shape,
-      quality,
-      stat,
-    }))
-
-    return {
-      version: 1,
-      currentStats,
-      pieces,
-      mode: parsed.m === 'n' ? 'normal' : 'full',
-      fullTimeLimit: {
-        enabled: enabledFlag === 1,
-        seconds,
-      },
-    }
+    return decodeCompactPayload(parsed, 2)
   }
 
   if (raw.startsWith(EXPORT_PREFIX_V1)) {
@@ -182,10 +221,10 @@ function decodeConfig(raw: string): ExportedConfigV1 {
     }
 
     return {
-      version: 1,
       currentStats: parsed.currentStats,
       pieces: parsed.pieces,
       mode: parsed.mode,
+      mountLevel: 0,
       fullTimeLimit: parsed.fullTimeLimit,
     }
   }
@@ -203,6 +242,11 @@ export default function App() {
     MODE_KEY,
     'normal',
     (raw): raw is OptimizerMode => raw === 'normal' || raw === 'full',
+  )
+  const [mountLevel, setMountLevel] = usePersistedState<MountLevel>(
+    MOUNT_LEVEL_KEY,
+    0,
+    (raw): raw is MountLevel => isMountLevel(raw),
   )
   const [fullTimeLimit, setFullTimeLimit] = usePersistedState<FullTimeLimit>(
     FULL_LIMIT_KEY,
@@ -229,7 +273,7 @@ export default function App() {
       mode === 'full' && fullTimeLimit.enabled
         ? fullTimeLimit.seconds * 1000
         : undefined
-    run({ currentStats, pieces, mode, timeBudgetMs })
+    run({ currentStats, pieces, mode, mountLevel, timeBudgetMs })
   }
 
   const result = status.result ?? status.progress?.partial ?? null
@@ -237,6 +281,30 @@ export default function App() {
     () => new Set(result?.unusedPieceIds ?? []),
     [result?.unusedPieceIds],
   )
+
+  // Re-derive the displayed score and mount-buff totals against the *current*
+  // mount level + stats so the UI stays accurate when the user adjusts stars
+  // without re-running the optimizer. The placement layout itself stays fixed
+  // (it may no longer be optimal — re-running gets a fresh layout).
+  const displayedResult = useMemo(() => {
+    if (!result) return null
+    const pieceById = new Map(pieces.map((p) => [p.id, p]))
+    const placedPieces = result.placements
+      .map((pl) => pieceById.get(pl.pieceId))
+      .filter((p): p is Piece => p != null)
+    const { final, buffs } = finalizeStats(
+      currentStats,
+      placedPieces,
+      result.linesFilled,
+      mountLevel,
+    )
+    return {
+      ...result,
+      afterScore: formula(final),
+      beforeScore: formula(currentStats),
+      buffsFromMount: buffs,
+    }
+  }, [result, pieces, currentStats, mountLevel])
 
   const currentScore = useMemo(() => formula(currentStats), [currentStats])
 
@@ -256,13 +324,13 @@ export default function App() {
   const exportedString = useMemo(
     () =>
       encodeConfig({
-        version: 1,
         currentStats,
         pieces,
         mode,
+        mountLevel,
         fullTimeLimit,
       }),
-    [currentStats, fullTimeLimit, mode, pieces],
+    [currentStats, fullTimeLimit, mode, mountLevel, pieces],
   )
 
   const handleOpenExport = () => {
@@ -285,6 +353,7 @@ export default function App() {
       setCurrentStats(parsed.currentStats)
       setPieces(parsed.pieces)
       setMode(parsed.mode)
+      setMountLevel(parsed.mountLevel)
       setFullTimeLimit(parsed.fullTimeLimit)
       setImportError(null)
       setImportText('')
@@ -301,6 +370,7 @@ export default function App() {
     setCurrentStats(parsed.currentStats)
     setPieces(parsed.pieces)
     setMode(parsed.mode)
+    setMountLevel(parsed.mountLevel)
     setFullTimeLimit(parsed.fullTimeLimit)
   }
 
@@ -474,6 +544,7 @@ export default function App() {
               onChange={setPieces}
               unusedIds={unusedSet}
             />
+            <MountPanel level={mountLevel} onChange={setMountLevel} />
           </div>
 
           <div className="flex flex-col gap-5">
@@ -497,43 +568,47 @@ export default function App() {
               }
             />
 
-            {result ? (
+            {displayedResult ? (
               <PanelShell title="Result" bodyClassName="flex flex-col gap-4">
                 <header className="flex items-center justify-between gap-4">
                   <div>
                     <h2 className="sr-only">Result</h2>
                     <div className="text-xs text-gray-400">
-                      {result.linesFilled} line{result.linesFilled === 1 ? '' : 's'} filled · {result.placements.length} piece{result.placements.length === 1 ? '' : 's'} placed
+                      {displayedResult.linesFilled} line{displayedResult.linesFilled === 1 ? '' : 's'} filled · {displayedResult.placements.length} piece{displayedResult.placements.length === 1 ? '' : 's'} placed
                     </div>
                   </div>
                   <div className="text-right">
                     <div className="text-xs text-gray-400">Final score</div>
                     <div className="text-2xl font-bold text-white">
-                      {result.afterScore.toFixed(3)}×
+                      {displayedResult.afterScore.toFixed(3)}×
                     </div>
                     <div className="text-xs text-accent">
-                      {improvementPct(result.beforeScore, result.afterScore)} vs.
+                      {improvementPct(displayedResult.beforeScore, displayedResult.afterScore)} vs.
                       no mount
                     </div>
                   </div>
                 </header>
 
                 <div className="flex justify-center">
-                  <BoardView pieces={pieces} placements={result.placements} />
+                  <BoardView
+                    pieces={pieces}
+                    placements={displayedResult.placements}
+                    maxHighlightedLines={maxBonusLinesForLevel(mountLevel)}
+                  />
                 </div>
 
                 <StatsSummary
                   currentStats={currentStats}
-                  buffsFromMount={result.buffsFromMount}
+                  buffsFromMount={displayedResult.buffsFromMount}
                 />
 
-                {result.unusedPieceIds.length > 0 && (
+                {displayedResult.unusedPieceIds.length > 0 && (
                   <div>
                     <h3 className="text-sm font-semibold text-white mb-2">
-                      Unused pieces ({result.unusedPieceIds.length})
+                      Unused pieces ({displayedResult.unusedPieceIds.length})
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                      {result.unusedPieceIds.map((id) => {
+                      {displayedResult.unusedPieceIds.map((id) => {
                         const piece = pieces.find((p) => p.id === id)
                         if (!piece) return null
                         return <PieceCard key={id} piece={piece} dim />
@@ -543,8 +618,8 @@ export default function App() {
                 )}
 
                 <div className="text-[11px] text-gray-500 text-right">
-                  {result.mode} mode · {result.elapsedMs.toFixed(0)}ms
-                  {result.truncated ? ' · timed out, best-so-far' : ''}
+                  {displayedResult.mode} mode · {displayedResult.elapsedMs.toFixed(0)}ms
+                  {displayedResult.truncated ? ' · timed out, best-so-far' : ''}
                 </div>
               </PanelShell>
             ) : (

@@ -22,10 +22,11 @@ describe('selectPieces', () => {
       counts({}),
       4,
       zeroStats(),
+      0,
     )
     expect(result.picks).toEqual([])
     const expected = zeroStats()
-    applyLineBonuses(expected, 4)
+    applyLineBonuses(expected, 4, 0)
     expect(result.score).toBeCloseTo(formula(expected), 10)
   })
 
@@ -34,17 +35,17 @@ describe('selectPieces', () => {
       mk('O', 'legend', 'critDamage'),
       mk('I', 'legend', 'skillDamage'),
     ]
-    const result = selectPieces(pieces, counts({ O: 1, I: 1 }), 0, zeroStats())
+    const result = selectPieces(pieces, counts({ O: 1, I: 1 }), 0, zeroStats(), 0)
     expect(result.picks.length).toBe(2)
-    expect(result.score).toBeCloseTo(scoreLayout(zeroStats(), pieces, 0), 10)
+    expect(result.score).toBeCloseTo(scoreLayout(zeroStats(), pieces, 0, 0), 10)
   })
 
   it('picks the highest-buff piece when slots < inventory', () => {
     const best = mk('O', 'legend', 'critDamage')
     const worst = mk('O', 'good', 'toBosses')
-    const result = selectPieces([best, worst], counts({ O: 1 }), 0, zeroStats())
+    const result = selectPieces([best, worst], counts({ O: 1 }), 0, zeroStats(), 0)
     expect(result.picks).toEqual([best])
-    expect(result.score).toBeCloseTo(scoreLayout(zeroStats(), [best], 0), 10)
+    expect(result.score).toBeCloseTo(scoreLayout(zeroStats(), [best], 0, 0), 10)
   })
 
   it('prefers diversifying stats over stacking the same stat', () => {
@@ -54,10 +55,10 @@ describe('selectPieces', () => {
     const a = mk('O', 'legend', 'critDamage')
     const b = mk('O', 'legend', 'skillDamage')
     const c = mk('O', 'good', 'critDamage')
-    const result = selectPieces([a, b, c], counts({ O: 2 }), 0, zeroStats())
+    const result = selectPieces([a, b, c], counts({ O: 2 }), 0, zeroStats(), 0)
     const ids = new Set(result.picks.map((p) => p.id))
     expect(ids).toEqual(new Set([a.id, b.id]))
-    expect(result.score).toBeCloseTo(scoreLayout(zeroStats(), [a, b], 0), 10)
+    expect(result.score).toBeCloseTo(scoreLayout(zeroStats(), [a, b], 0, 0), 10)
   })
 
   it('respects per-shape quotas', () => {
@@ -70,6 +71,7 @@ describe('selectPieces', () => {
       counts({ O: 1, I: 1 }),
       0,
       zeroStats(),
+      0,
     )
     expect(result.picks.length).toBe(2)
     const shapeCounts = result.picks.reduce<Record<string, number>>((acc, p) => {
@@ -86,11 +88,11 @@ describe('selectPieces', () => {
 
   it('applies line bonuses when scoring', () => {
     const p = mk('O', 'legend', 'critDamage')
-    const noLines = selectPieces([p], counts({ O: 1 }), 0, zeroStats())
-    const withLines = selectPieces([p], counts({ O: 1 }), 4, zeroStats())
+    const noLines = selectPieces([p], counts({ O: 1 }), 0, zeroStats(), 0)
+    const withLines = selectPieces([p], counts({ O: 1 }), 4, zeroStats(), 0)
     expect(withLines.score).toBeGreaterThan(noLines.score)
     expect(withLines.score).toBeCloseTo(
-      scoreLayout(zeroStats(), [p], 4),
+      scoreLayout(zeroStats(), [p], 4, 0),
       10,
     )
   })
@@ -107,6 +109,7 @@ describe('selectPieces', () => {
       counts({ O: 1 }),
       0,
       high,
+      0,
     )
     expect(result.picks).toEqual([skillPiece])
   })
@@ -120,6 +123,7 @@ describe('selectPieces', () => {
       counts({ O: 2, I: 1 }),
       0,
       zeroStats(),
+      0,
     )
     expect(result.picks.length).toBe(3)
     const totalCrit =
@@ -141,10 +145,11 @@ describe('selectPieces', () => {
       counts({ O: 1, I: 1, T: 1, L: 1 }),
       2,
       zeroStats(),
+      0,
     )
     expect(result.picks.length).toBe(4)
     expect(result.score).toBeCloseTo(
-      scoreLayout(zeroStats(), result.picks, 2),
+      scoreLayout(zeroStats(), result.picks, 2, 0),
       10,
     )
     // Expected best: pick the highest-value piece per shape (since each shape

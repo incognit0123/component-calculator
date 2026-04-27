@@ -1,4 +1,5 @@
 import { BUFF_TABLE } from '../data/buffTable'
+import type { MountLevel } from '../data/lineBonuses'
 import { SHAPE_KEYS } from '../data/shapes'
 import type {
   Piece,
@@ -40,9 +41,10 @@ export function selectPieces(
   dist: ShapeCounts,
   lineCount: number,
   currentStats: StatTotals,
+  mountLevel: MountLevel,
 ): SelectionResult {
   const baseStats = cloneStats(currentStats)
-  applyLineBonuses(baseStats, lineCount)
+  applyLineBonuses(baseStats, lineCount, mountLevel)
   const baseScore = formula(baseStats)
 
   const groups = new Map<string, Bucket>()
