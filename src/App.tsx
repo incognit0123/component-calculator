@@ -214,6 +214,7 @@ export default function App() {
   )
 
   const { status, run, cancel } = useOptimizer()
+  const [isProfilesOpen, setIsProfilesOpen] = useState(false)
   const [isSaveProfileOpen, setIsSaveProfileOpen] = useState(false)
   const [profileName, setProfileName] = useState('')
   const [profileError, setProfileError] = useState<string | null>(null)
@@ -344,7 +345,19 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-bg flex">
-      <aside className="w-72 border-r border-bg-line/70 bg-bg-panel/35 p-4 flex flex-col">
+      <div
+        onClick={() => setIsProfilesOpen(false)}
+        aria-hidden={!isProfilesOpen}
+        className={`fixed inset-0 z-30 bg-black/50 backdrop-blur-sm transition-opacity duration-200 ${
+          isProfilesOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+      />
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 w-72 border-r border-bg-line/70 bg-bg-panel p-4 flex flex-col shadow-2xl transform transition-transform duration-200 ${
+          isProfilesOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+        aria-hidden={!isProfilesOpen}
+      >
         <div className="mb-4">
           <h2 className="text-sm font-semibold text-white">Profiles</h2>
           <p className="text-xs text-gray-400 mt-1">
@@ -412,6 +425,14 @@ export default function App() {
             </div>
             <div className="text-right text-xs text-gray-400 flex flex-col items-end gap-2">
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsProfilesOpen((prev) => !prev)}
+                  className="app-button px-2.5 py-1 text-xs"
+                  aria-expanded={isProfilesOpen}
+                >
+                  Profiles
+                </button>
                 <button
                   type="button"
                   onClick={() => {
