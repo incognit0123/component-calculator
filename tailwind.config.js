@@ -5,20 +5,20 @@ export default {
     extend: {
       colors: {
         bg: {
-          DEFAULT: '#0b1020',
-          panel: '#131a33',
-          elev: '#1a2246',
-          line: '#232c54',
+          DEFAULT: '#21222c',
+          panel: '#333543',
+          elev: '#3a3c49',
+          line: '#5c5c6d',
         },
-        accent: '#8b5cf6',
+        accent: '#4a93e8',
         tier: {
           good: '#22c55e',
-          better: '#3b82f6',
-          excellent: '#a855f7',
-          excellentPlus: '#c084fc',
-          epic: '#eab308',
-          epicPlus: '#facc15',
-          legend: '#ef4444',
+          better: '#4f8cff',
+          excellent: '#b667ff',
+          excellentPlus: '#cf9bff',
+          epic: '#f6bd1a',
+          epicPlus: '#ffd95c',
+          legend: '#ff5876',
         },
       },
       fontFamily: {
