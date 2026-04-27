@@ -1,73 +1,47 @@
-# React + TypeScript + Vite
+# Mount Board Optimizer
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A planner for the **Survivor.io** mount board that finds the highest-damage layout of your tetromino-shaped mount pieces on the 8×7 board.
 
-Currently, two official plugins are available:
+**Live site:** https://incognit0123.github.io/component-calculator/
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## What it does
 
-## React Compiler
+You enter:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Your **current pre-mount stat buffs** (the eight damage-related percentages you already have from gear, runes, etc.).
+- Your **inventory of mount pieces** — each piece's shape, quality tier, and which stat it buffs.
 
-## Expanding the ESLint configuration
+The app searches over board layouts and piece selections and returns the one that maximizes your final damage multiplier, accounting for:
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- The full damage formula — five independent multiplicative factors plus the additive group of `weakened`/`poisoned`/`chilled` debuff stats.
+- **Line-clear bonuses** — fully-filled rows grant cumulative bonuses to `toWeakened` (+10/+25) and `critDamage` (+20/+55), so the optimizer trades raw piece value against geometric line-fills.
+- **Diminishing returns** — because stats compound multiplicatively, the marginal value of a piece depends on the rest of the layout, so a greedy "best piece first" approach is not optimal.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+There are two modes:
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+- **Normal** — fast; prunes branches that can't meaningfully improve the current best.
+- **Full** — exhaustive within the regime that can possibly hold the optimum; slower but guaranteed-optimal under the model.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+Pieces, current stats, and mode are saved to `localStorage` so you don't lose your inventory between sessions.
+
+## Domain reference
+
+- **Stats (8):** `critDamage`, `skillDamage`, `shieldDamage`, `toWeakened`, `toPoisoned`, `toChilled`, `laceration`, `toBosses`
+- **Shapes (5):** `O`, `I`, `T`, `L`, `J` (no S/Z tetrominoes exist in-game)
+- **Quality tiers (7):** `good`, `better`, `excellent`, `excellentPlus`, `epic`, `epicPlus`, `legend`
+- **Board:** 8 rows × 7 columns
+
+## Development
+
+```bash
+npm install
+npm run dev          # Vite dev server
+npm run build        # type-check + production build
+npx vitest run       # run the test suite
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The project is React 19 + TypeScript + Vite, styled with Tailwind. The optimizer runs in a Web Worker so the UI stays responsive during a search.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Deployment
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+`main` is automatically built, tested, and deployed to GitHub Pages by `.github/workflows/deploy.yml`.

@@ -3,6 +3,11 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'eslint.config.js'
+      - '.claude/**'
   workflow_dispatch:
 
 permissions:
