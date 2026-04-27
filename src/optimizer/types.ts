@@ -1,3 +1,4 @@
+import type { MountLevel } from '../data/lineBonuses'
 import type { Piece, StatTotals, OptimizerMode } from '../data/types'
 
 export const BOARD_ROWS = 8
@@ -20,6 +21,7 @@ export interface OptimizerInput {
   currentStats: StatTotals
   pieces: Piece[]
   mode: OptimizerMode
+  mountLevel: MountLevel
   timeBudgetMs?: number
 }
 

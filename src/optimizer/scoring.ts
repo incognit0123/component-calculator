@@ -1,16 +1,21 @@
 import { BUFF_TABLE } from '../data/buffTable'
-import { LINE_BONUS_TIERS } from '../data/lineBonuses'
+import { LINE_BONUS_TIERS, type MountLevel } from '../data/lineBonuses'
 import { zeroStats } from '../data/stats'
 import type { Piece, StatKey, StatTotals } from '../data/types'
 
 /**
- * Mutates `stats` in place to add cumulative line-clear bonuses for L filled rows.
- * Bonuses are cumulative: each tier's buffs stack on top of lower tiers'.
- * Tiers are defined in `src/data/lineBonuses.ts`.
+ * Mutates `stats` in place to add cumulative line-clear bonuses for L filled
+ * rows at the given mount level. Tiers above `mountLevel`'s unlock threshold
+ * are skipped. Tiers are defined in `src/data/lineBonuses.ts`.
  */
-export function applyLineBonuses(stats: StatTotals, lines: number): void {
+export function applyLineBonuses(
+  stats: StatTotals,
+  lines: number,
+  mountLevel: MountLevel,
+): void {
   for (const tier of LINE_BONUS_TIERS) {
     if (lines < tier.minLines) continue
+    if (tier.unlockedAtLevel > mountLevel) continue
     for (const key of Object.keys(tier.bonus) as StatKey[]) {
       const inc = tier.bonus[key]
       if (inc != null) stats[key] += inc
@@ -45,10 +50,11 @@ export function scoreLayout(
   currentStats: StatTotals,
   placedPieces: Piece[],
   lines: number,
+  mountLevel: MountLevel,
 ): number {
   const stats = cloneStats(currentStats)
   addPieceBuffs(stats, placedPieces)
-  applyLineBonuses(stats, lines)
+  applyLineBonuses(stats, lines, mountLevel)
   return formula(stats)
 }
 
@@ -57,12 +63,13 @@ export function finalizeStats(
   currentStats: StatTotals,
   placedPieces: Piece[],
   lines: number,
+  mountLevel: MountLevel,
 ): { final: StatTotals; buffs: StatTotals } {
   const buffs = zeroStats()
   for (const p of placedPieces) {
     buffs[p.stat] += BUFF_TABLE[p.quality][p.stat]
   }
-  applyLineBonuses(buffs, lines)
+  applyLineBonuses(buffs, lines, mountLevel)
   const final = cloneStats(currentStats)
   for (const k of Object.keys(final) as (keyof StatTotals)[]) {
     final[k] += buffs[k]

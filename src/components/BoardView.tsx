@@ -16,6 +16,8 @@ const FULL_ROW_FILL = '#facc15'
 interface Props {
   pieces: Piece[]
   placements: Placement[]
+  /** Max number of full rows to highlight as scoring (cap from mount level). */
+  maxHighlightedLines: number
   cellSize?: number
 }
 
@@ -30,7 +32,12 @@ interface PieceRender {
   buff: number
 }
 
-export function BoardView({ pieces, placements, cellSize = 44 }: Props) {
+export function BoardView({
+  pieces,
+  placements,
+  maxHighlightedLines,
+  cellSize = 44,
+}: Props) {
   const pieceById = new Map(pieces.map((p) => [p.id, p]))
 
   const piecesToRender: PieceRender[] = []
@@ -113,20 +120,25 @@ export function BoardView({ pieces, placements, cellSize = 44 }: Props) {
           ),
         )}
 
-        {Array.from({ length: BOARD_ROWS }).map((_, r) => {
-          const rowFull = (rowMask & (1 << r)) !== 0
-          if (!rowFull) return null
-          return (
-            <rect
-              key={`yr-${r}`}
-              x={0}
-              y={r * cellSize}
-              width={boardWidth}
-              height={cellSize}
-              fill={FULL_ROW_FILL}
-            />
-          )
-        })}
+        {(() => {
+          let highlighted = 0
+          const cap = Math.max(0, maxHighlightedLines)
+          return Array.from({ length: BOARD_ROWS }).map((_, r) => {
+            const rowFull = (rowMask & (1 << r)) !== 0
+            if (!rowFull || highlighted >= cap) return null
+            highlighted++
+            return (
+              <rect
+                key={`yr-${r}`}
+                x={0}
+                y={r * cellSize}
+                width={boardWidth}
+                height={cellSize}
+                fill={FULL_ROW_FILL}
+              />
+            )
+          })
+        })()}
 
         {piecesToRender.map((p) => (
           <g key={p.pieceId}>

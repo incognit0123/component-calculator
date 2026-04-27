@@ -32,6 +32,7 @@ ctx.addEventListener(
       }
       const result = await solve(input.pieces, input.currentStats, {
         mode: input.mode,
+        mountLevel: input.mountLevel,
         timeBudgetMs: input.timeBudgetMs,
         isCancelled: () => cancelled,
         onProgress,

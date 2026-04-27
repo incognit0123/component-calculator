@@ -1,5 +1,5 @@
 import { BUFF_TABLE } from '../data/buffTable'
-import { MAX_BONUS_LINES } from '../data/lineBonuses'
+import { maxBonusLinesForLevel, type MountLevel } from '../data/lineBonuses'
 import { MIN_PIECE_CELLS, SHAPE_KEYS } from '../data/shapes'
 import { zeroStats } from '../data/stats'
 import type {
@@ -30,6 +30,7 @@ import type { OptimizerResult, Placement } from './types'
 
 export interface SolveOptions {
   mode?: OptimizerMode
+  mountLevel?: MountLevel
   isCancelled?: () => boolean
   onProgress?: (best: OptimizerResult, explored: number) => void
   /** Hard time cap (ms). On expiry returns best-so-far with truncated=true. */
@@ -78,6 +79,7 @@ export async function solve(
 ): Promise<OptimizerResult> {
   const started = performance.now()
   const mode: OptimizerMode = opts.mode ?? 'full'
+  const mountLevel: MountLevel = opts.mountLevel ?? 0
   const tolerance = opts.normalToleranceEps ?? DEFAULT_NORMAL_TOLERANCE
   const deadline =
     opts.timeBudgetMs != null ? started + opts.timeBudgetMs : Infinity
@@ -86,6 +88,8 @@ export async function solve(
     inventory,
     currentStats,
     mode,
+    mountLevel,
+    maxBonusLines: maxBonusLinesForLevel(mountLevel),
     tolerance,
     deadline,
     started,
@@ -112,6 +116,8 @@ interface SolveContext {
   inventory: Piece[]
   currentStats: StatTotals
   mode: OptimizerMode
+  mountLevel: MountLevel
+  maxBonusLines: number
   tolerance: number
   deadline: number
   started: number
@@ -139,7 +145,7 @@ function groupPiecesByShape(pieces: Piece[]): Record<ShapeKey, Piece[]> {
  */
 async function solveSmallInventory(ctx: SolveContext): Promise<OptimizerResult> {
   const fullDist = inventoryShapeCounts(ctx.inventory)
-  const target = effectiveLineTarget(totalShapeCells(fullDist))
+  const target = effectiveLineTarget(totalShapeCells(fullDist), ctx.maxBonusLines)
   const tiling = tileDistribution(fullDist, target)
   if (tiling) {
     return buildResult(
@@ -149,6 +155,7 @@ async function solveSmallInventory(ctx: SolveContext): Promise<OptimizerResult> 
       tiling.lines,
       ctx.currentStats,
       ctx.mode,
+      ctx.mountLevel,
     )
   }
 
@@ -160,7 +167,7 @@ async function solveSmallInventory(ctx: SolveContext): Promise<OptimizerResult> 
     const droppedDist = inventoryShapeCounts(dropped)
     const droppedTiling = tileDistribution(
       droppedDist,
-      effectiveLineTarget(totalShapeCells(droppedDist)),
+      effectiveLineTarget(totalShapeCells(droppedDist), ctx.maxBonusLines),
     )
     if (!droppedTiling) continue
     const result = buildResult(
@@ -170,6 +177,7 @@ async function solveSmallInventory(ctx: SolveContext): Promise<OptimizerResult> 
       droppedTiling.lines,
       ctx.currentStats,
       ctx.mode,
+      ctx.mountLevel,
     )
     if (result.afterScore > bestScore) {
       bestScore = result.afterScore
@@ -197,7 +205,13 @@ async function solveFullInventory(
 
   const ranked = distributions.map((dist) => ({
     dist,
-    upperBound: distributionUpperBound(piecesByShape, dist, ctx.currentStats),
+    upperBound: distributionUpperBound(
+      piecesByShape,
+      dist,
+      ctx.currentStats,
+      ctx.mountLevel,
+      ctx.maxBonusLines,
+    ),
   }))
   ranked.sort((a, b) => b.upperBound - a.upperBound)
 
@@ -212,7 +226,7 @@ async function solveFullInventory(
 
     const tiling = tileDistribution(
       dist,
-      effectiveLineTarget(totalShapeCells(dist)),
+      effectiveLineTarget(totalShapeCells(dist), ctx.maxBonusLines),
     )
     if (!tiling) continue
 
@@ -221,6 +235,7 @@ async function solveFullInventory(
       dist,
       tiling.lines,
       ctx.currentStats,
+      ctx.mountLevel,
     )
     ctx.explored++
 
@@ -233,6 +248,7 @@ async function solveFullInventory(
         tiling.lines,
         ctx.currentStats,
         ctx.mode,
+        ctx.mountLevel,
       )
       maybeProgress(ctx, best)
     }
@@ -250,11 +266,13 @@ function distributionUpperBound(
   piecesByShape: Record<ShapeKey, Piece[]>,
   dist: ShapeCounts,
   currentStats: StatTotals,
+  mountLevel: MountLevel,
+  maxBonusLines: number,
 ): number {
   const cellsToPlace = totalShapeCells(dist)
-  const lines = effectiveLineTarget(cellsToPlace)
+  const lines = effectiveLineTarget(cellsToPlace, maxBonusLines)
   const stats = cloneStats(currentStats)
-  applyLineBonuses(stats, lines)
+  applyLineBonuses(stats, lines, mountLevel)
   const baseScore = formula(stats)
 
   let bound = baseScore
@@ -277,16 +295,19 @@ function distributionUpperBound(
 
 /**
  * Highest line count worth searching for given the cells we'll place. Capped
- * by both the geometric ceiling (cells / cols) and the bonus cap, since
- * extra lines beyond the cap don't change the score.
+ * by both the geometric ceiling (cells / cols) and the level-dependent bonus
+ * cap, since extra lines beyond the cap don't change the score.
  */
-function effectiveLineTarget(cellsToPlace: number): number {
+function effectiveLineTarget(
+  cellsToPlace: number,
+  maxBonusLines: number,
+): number {
   const emptyCells = Math.max(0, BOARD_BITS - cellsToPlace)
   const geometricMax = Math.max(
     0,
     BOARD_ROWS - Math.ceil(emptyCells / BOARD_COLS),
   )
-  return Math.min(MAX_BONUS_LINES, geometricMax)
+  return Math.min(maxBonusLines, geometricMax)
 }
 
 function assignPiecesToSlots(
@@ -321,11 +342,12 @@ function buildResult(
   lines: number,
   currentStats: StatTotals,
   mode: OptimizerMode,
+  mountLevel: MountLevel,
 ): OptimizerResult {
   const placements = assignPiecesToSlots(picks, slots)
   const beforeScore = formula(currentStats)
-  const afterScore = scoreLayout(currentStats, picks, lines)
-  const { buffs } = finalizeStats(currentStats, picks, lines)
+  const afterScore = scoreLayout(currentStats, picks, lines, mountLevel)
+  const { buffs } = finalizeStats(currentStats, picks, lines, mountLevel)
   const placedIds = new Set(picks.map((p) => p.id))
   const unusedPieceIds = inventory
     .filter((p) => !placedIds.has(p.id))
