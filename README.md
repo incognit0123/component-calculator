@@ -42,6 +42,40 @@ npx vitest run       # run the test suite
 
 The project is React 19 + TypeScript + Vite, styled with Tailwind. The optimizer runs in a Web Worker so the UI stays responsive during a search.
 
+## Docker Development
+
+You can run everything in Docker without installing Node/npm on your host.
+
+### Requirements
+
+- Docker Desktop (or Docker Engine + Docker Compose plugin)
+
+### Quick start
+
+```bash
+make build
+```
+
+This builds the image and starts the app in attached mode (you will see live logs). Open:
+
+- http://localhost:5173
+
+### Useful commands
+
+```bash
+make up       # start in background
+make logs     # tail logs
+make down     # stop containers
+make clean    # stop containers and remove volumes
+make shell    # open a shell in the app container
+```
+
+Notes:
+
+- Source code is bind-mounted, so edits on host reflect inside the container.
+- Dependencies live in a Docker-managed `node_modules` volume to avoid host pollution.
+- The dev server listens on `0.0.0.0:5173` in the container and is published to your localhost.
+
 ## Deployment
 
 `main` is automatically built, tested, and deployed to GitHub Pages by `.github/workflows/deploy.yml`.

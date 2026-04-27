@@ -19,14 +19,14 @@ export function PieceCard({ piece, onEdit, onDelete, dim }: Props) {
   const stat = STAT_META[piece.stat]
   return (
     <div
-      className={`bg-bg-elev border border-bg-line rounded-lg p-3 flex flex-col gap-2 ${
+      className={`panel-inner p-3 flex flex-col gap-2 ${
         dim ? 'opacity-50' : ''
       }`}
     >
       <div className="flex items-center justify-between gap-2">
         <div
           className="rounded-md p-1.5 flex items-center justify-center"
-          style={{ background: color + '22', border: `1px solid ${color}55` }}
+          style={{ background: '#3a3d4d', border: '2px solid #151922' }}
         >
           <ShapeGlyph
             shape={piece.shape}
@@ -59,7 +59,7 @@ export function PieceCard({ piece, onEdit, onDelete, dim }: Props) {
       <div className="flex items-center gap-2">
         <StatIcon stat={piece.stat} size={22} />
         <div className="flex flex-col leading-tight min-w-0">
-          <span className="text-white text-sm truncate">{stat.name}</span>
+          <span className="text-white text-sm break-words">{stat.name}</span>
           <span className="text-xs" style={{ color }}>
             +{buff}%
           </span>

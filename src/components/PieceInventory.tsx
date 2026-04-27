@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid'
 import type { Piece } from '../data/types'
 import { PieceCard } from './PieceCard'
 import { PieceEditor } from './PieceEditor'
+import { PanelShell } from './PanelShell'
 
 interface Props {
   pieces: Piece[]
@@ -45,14 +46,8 @@ export function PieceInventory({ pieces, onChange, unusedIds }: Props) {
   }
 
   return (
-    <section className="bg-bg-panel border border-bg-line rounded-xl p-5">
-      <header className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-white">
-          Piece inventory{' '}
-          <span className="text-sm text-gray-400 font-normal">
-            ({pieces.length})
-          </span>
-        </h2>
+    <PanelShell title="Inventory">
+      <header className="flex items-center justify-end -mt-2 mb-3">
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -65,7 +60,7 @@ export function PieceInventory({ pieces, onChange, unusedIds }: Props) {
           <button
             type="button"
             onClick={openAdd}
-            className="text-sm bg-accent text-white font-semibold px-3 py-1.5 rounded-md hover:bg-accent/90"
+            className="app-button"
           >
             + Add piece
           </button>
@@ -73,7 +68,7 @@ export function PieceInventory({ pieces, onChange, unusedIds }: Props) {
       </header>
 
       {pieces.length === 0 ? (
-        <p className="text-sm text-gray-400 py-6 text-center">
+        <p className="panel-inner text-sm text-gray-400 py-6 text-center">
           No pieces yet. Click <span className="text-white">Add piece</span> to build your inventory.
         </p>
       ) : (
@@ -96,6 +91,6 @@ export function PieceInventory({ pieces, onChange, unusedIds }: Props) {
         onClose={() => setEditorOpen(false)}
         onSave={handleSave}
       />
-    </section>
+    </PanelShell>
   )
 }

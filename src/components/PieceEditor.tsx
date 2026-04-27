@@ -77,8 +77,8 @@ export function PieceEditor({ open, initial, onClose, onSave }: Props) {
                 aria-pressed={shape === s}
                 className={`flex flex-col items-center gap-1 rounded-md border px-2.5 py-2 transition ${
                   shape === s
-                    ? 'border-accent bg-accent/15'
-                    : 'border-bg-line bg-bg-elev hover:border-accent/50'
+                    ? 'border-accent bg-[#404458]'
+                    : 'border-bg-line bg-transparent hover:border-accent/50'
                 }`}
               >
                 <ShapeGlyph
@@ -123,8 +123,8 @@ export function PieceEditor({ open, initial, onClose, onSave }: Props) {
                 aria-pressed={stat === s.key}
                 className={`flex items-center gap-2 rounded-md border px-2 py-2 text-left transition ${
                   stat === s.key
-                    ? 'border-accent bg-accent/15'
-                    : 'border-bg-line bg-bg-elev hover:border-accent/50'
+                    ? 'border-accent bg-[#404458]'
+                    : 'border-bg-line bg-transparent hover:border-accent/50'
                 }`}
               >
                 <StatIcon stat={s.key} size={22} />
@@ -134,7 +134,7 @@ export function PieceEditor({ open, initial, onClose, onSave }: Props) {
           </div>
         </fieldset>
 
-        <div className="bg-bg-elev border border-bg-line rounded-md p-3 flex items-center justify-between">
+        <div className="panel-inner p-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <ShapeGlyph
               shape={shape}

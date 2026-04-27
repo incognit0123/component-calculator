@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { OptimizerMode } from '../data/types'
+import { PanelShell } from './PanelShell'
 
 export interface FullTimeLimit {
   enabled: boolean
@@ -109,11 +110,12 @@ export function OptimizerPanel({
       : undefined
 
   return (
-    <section className="bg-bg-panel border border-bg-line rounded-xl p-5">
-      <header className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-white">Optimizer</h2>
+    <PanelShell title="Optimizer">
+      <header className="flex items-center justify-end mt-1 mb-4">
         {statusLabel && (
-          <span className="text-xs text-gray-400">{statusLabel}</span>
+          <span className="text-xs text-gray-300 leading-tight text-right">
+            {statusLabel}
+          </span>
         )}
       </header>
 
@@ -130,8 +132,8 @@ export function OptimizerPanel({
                 aria-pressed={mode === m.key}
                 className={`text-left rounded-md border p-2 transition disabled:opacity-50 ${
                   mode === m.key
-                    ? 'border-accent bg-accent/15'
-                    : 'border-bg-line bg-bg-elev hover:border-accent/50'
+                    ? 'border-accent bg-[#404458]'
+                    : 'border-[#151922] bg-transparent hover:border-[#151922]'
                 }`}
               >
                 <div className="text-sm font-semibold text-white">{m.name}</div>
@@ -145,7 +147,7 @@ export function OptimizerPanel({
             <button
               type="button"
               onClick={onCancel}
-              className="px-4 py-2 rounded-md bg-red-600 text-white font-semibold hover:bg-red-500"
+              className="app-button border-red-500/60 bg-red-700/70 text-white hover:bg-red-600"
             >
               Cancel
             </button>
@@ -154,7 +156,7 @@ export function OptimizerPanel({
               type="button"
               onClick={onRun}
               disabled={!canRun}
-              className="px-4 py-2 rounded-md bg-accent text-white font-semibold hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="app-button px-4 py-2 disabled:cursor-not-allowed"
             >
               Run optimizer
             </button>
@@ -189,7 +191,7 @@ export function OptimizerPanel({
               const v = Math.max(1, Math.floor(Number(e.target.value) || 0))
               onFullTimeLimitChange({ ...fullTimeLimit, seconds: v })
             }}
-            className="w-20 bg-bg-panel border border-bg-line rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-accent disabled:opacity-50"
+            className="app-input w-20 px-2 py-1 text-xs focus:outline-none focus:border-accent disabled:opacity-50"
           />
           <span className="text-gray-500">seconds</span>
           {!fullTimeLimit.enabled && (
@@ -209,6 +211,6 @@ export function OptimizerPanel({
       {progressLabel && (
         <div className="mt-2 text-xs text-gray-400">{progressLabel}</div>
       )}
-    </section>
+    </PanelShell>
   )
 }

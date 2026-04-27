@@ -4,6 +4,11 @@
 
 :root {
   color-scheme: dark;
+  --sio-dark: #21222c;
+  --sio-accent-surface: #333543;
+  --sio-secondary: #5c5c6d;
+  --sio-blue: #4a93e8;
+  --sio-text: #ffffff;
 }
 
 html,
@@ -14,8 +19,8 @@ body,
 
 body {
   margin: 0;
-  background: #0b1020;
-  color: #e5e7eb;
+  background: var(--sio-dark);
+  color: var(--sio-text);
   font-family:
     Inter,
     ui-sans-serif,
@@ -25,6 +30,19 @@ body {
     Roboto,
     sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.35) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.35) 1px, transparent 1px);
+  background-size: 3px 3px;
+  mix-blend-mode: soft-light;
 }
 
 button {
@@ -50,4 +68,53 @@ input[type='number'] {
 }
 .animate-progress-indeterminate {
   animation: progress-indeterminate 1.1s linear infinite;
+}
+
+@layer components {
+  .ant-ribbon-wrapper {
+    display: block;
+  }
+
+  .ant-ribbon-wrapper .ant-ribbon {
+    border: 2px solid #1a1d28;
+    background: #494c5d;
+    box-shadow: none;
+    font-size: 13px;
+    line-height: 1;
+    padding: 6px 12px;
+  }
+
+  .ant-ribbon-wrapper .ant-ribbon-corner {
+    color: #303444;
+  }
+
+  .ant-card.panel-frame .ant-card-body {
+    color: #fff;
+  }
+
+  .panel-frame {
+    @apply relative rounded-lg border-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_8px_18px_rgba(5,6,10,0.35)];
+    background-color: #353848;
+    border-color: #12141c;
+  }
+
+  .panel-inner {
+    @apply rounded-md border-2 bg-transparent;
+    border-color: #151922;
+  }
+
+  .panel-tag {
+    @apply absolute -top-3 left-4 inline-flex items-center rounded-sm border-2 px-3 py-1 text-[13px] font-medium leading-none text-white;
+    background-color: #494c5d;
+    border-color: #1a1d28;
+  }
+
+  .app-button {
+    @apply rounded-md border border-[#5f7fb1] bg-[#4a93e8] px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-[#63a3ef] disabled:opacity-50;
+  }
+
+  .app-input {
+    @apply rounded-md border-2 bg-[#3a3d4d] text-white;
+    border-color: #151922;
+  }
 }
