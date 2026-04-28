@@ -1,4 +1,4 @@
-import { BOARD_COLS, BOARD_ROWS } from '../optimizer/types'
+import { BOARD_ROWS } from '../optimizer/types'
 import type { Placement } from '../optimizer/types'
 import type { Piece, StatKey } from '../data/types'
 import { SHAPE_ROTATIONS } from '../data/shapes'
@@ -16,6 +16,8 @@ const FULL_ROW_FILL = '#facc15'
 interface Props {
   pieces: Piece[]
   placements: Placement[]
+  /** Number of board columns (mount-dependent: 7, 9, or 12). */
+  cols: number
   /** Max number of full rows to highlight as scoring (cap from mount level). */
   maxHighlightedLines: number
   cellSize?: number
@@ -35,6 +37,7 @@ interface PieceRender {
 export function BoardView({
   pieces,
   placements,
+  cols,
   maxHighlightedLines,
   cellSize = 44,
 }: Props) {
@@ -51,7 +54,7 @@ export function BoardView({
       ([dr, dc]) => [pl.row + dr, pl.col + dc] as Cell,
     )
     for (const [r, c] of cells) {
-      occ |= 1n << BigInt(r * BOARD_COLS + c)
+      occ |= 1n << BigInt(r * cols + c)
     }
     piecesToRender.push({
       pieceId: pl.pieceId,
@@ -65,9 +68,9 @@ export function BoardView({
     })
   }
 
-  const rowMask = fullRowsMask(occ)
+  const rowMask = fullRowsMask(occ, cols)
 
-  const boardWidth = BOARD_COLS * cellSize
+  const boardWidth = cols * cellSize
   const boardHeight = BOARD_ROWS * cellSize
   const outerInset = Math.max(2, Math.round(cellSize * 0.09))
   const bandWidth = Math.max(3, Math.round(cellSize * 0.13))
@@ -93,7 +96,7 @@ export function BoardView({
           height={boardHeight}
           fill={GRID_BG}
         />
-        {Array.from({ length: BOARD_COLS - 1 }).map((_, i) => (
+        {Array.from({ length: cols - 1 }).map((_, i) => (
           <line
             key={`v-${i}`}
             x1={(i + 1) * cellSize}

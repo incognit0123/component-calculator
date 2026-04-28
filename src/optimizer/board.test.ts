@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest'
+import { MOUNT_KEYS, MOUNTS } from '../data/mounts'
 import { SHAPE_KEYS, SHAPE_ROTATIONS, shapeBounds } from '../data/shapes'
 import {
   bitFor,
   countFullRows,
-  FULL_BOARD,
-  FULL_ROW_MASKS,
+  fullBoard,
+  fullRowMasks,
   fullRowsMask,
   placementsForShape,
 } from './board'
-import { BOARD_COLS, BOARD_ROWS } from './types'
+import { BOARD_ROWS } from './types'
 
 describe('shape rotations', () => {
   it('every rotation has min row/col equal to 0', () => {
@@ -41,44 +42,53 @@ describe('shape rotations', () => {
 })
 
 describe('countFullRows / fullRowsMask', () => {
-  it('returns 0 for empty board', () => {
-    expect(countFullRows(0n)).toBe(0)
-    expect(fullRowsMask(0n)).toBe(0)
-  })
-  it('detects a full row', () => {
-    const row2 = FULL_ROW_MASKS[2]
-    expect(countFullRows(row2)).toBe(1)
-    expect(fullRowsMask(row2)).toBe(1 << 2)
-  })
-  it('full board has all BOARD_ROWS rows', () => {
-    expect(countFullRows(FULL_BOARD)).toBe(BOARD_ROWS)
-    expect(fullRowsMask(FULL_BOARD)).toBe((1 << BOARD_ROWS) - 1)
-  })
-  it('does not count column fills as rows', () => {
-    let col = 0n
-    for (let r = 0; r < BOARD_ROWS; r++) col |= bitFor(r, 3)
-    expect(countFullRows(col)).toBe(0)
-  })
+  for (const key of MOUNT_KEYS) {
+    const cols = MOUNTS[key].cols
+    it(`returns 0 for empty board (cols=${cols})`, () => {
+      expect(countFullRows(0n, cols)).toBe(0)
+      expect(fullRowsMask(0n, cols)).toBe(0)
+    })
+    it(`detects a full row (cols=${cols})`, () => {
+      const row2 = fullRowMasks(cols)[2]
+      expect(countFullRows(row2, cols)).toBe(1)
+      expect(fullRowsMask(row2, cols)).toBe(1 << 2)
+    })
+    it(`full board has all BOARD_ROWS rows (cols=${cols})`, () => {
+      const fb = fullBoard(cols)
+      expect(countFullRows(fb, cols)).toBe(BOARD_ROWS)
+      expect(fullRowsMask(fb, cols)).toBe((1 << BOARD_ROWS) - 1)
+    })
+    it(`does not count column fills as rows (cols=${cols})`, () => {
+      let col = 0n
+      for (let r = 0; r < BOARD_ROWS; r++) col |= bitFor(r, 3, cols)
+      expect(countFullRows(col, cols)).toBe(0)
+    })
+  }
 })
 
 describe('placementsForShape', () => {
-  it('O (2x2) has (ROWS-1)*(COLS-1) placements', () => {
-    expect(placementsForShape('O').length).toBe((BOARD_ROWS - 1) * (BOARD_COLS - 1))
-  })
-  it('I total = horizontal + vertical placements', () => {
-    const horiz = BOARD_ROWS * (BOARD_COLS - 4 + 1)
-    const vert = (BOARD_ROWS - 4 + 1) * BOARD_COLS
-    expect(placementsForShape('I').length).toBe(horiz + vert)
-  })
-  it('placement masks have popcount 4', () => {
-    for (const pl of placementsForShape('T')) {
-      let bits = 0
-      let m = pl.mask
-      while (m !== 0n) {
-        bits++
-        m &= m - 1n
+  for (const key of MOUNT_KEYS) {
+    const cols = MOUNTS[key].cols
+    it(`O (2x2) has (ROWS-1)*(cols-1) placements (cols=${cols})`, () => {
+      expect(placementsForShape('O', cols).length).toBe(
+        (BOARD_ROWS - 1) * (cols - 1),
+      )
+    })
+    it(`I total = horizontal + vertical placements (cols=${cols})`, () => {
+      const horiz = BOARD_ROWS * (cols - 4 + 1)
+      const vert = (BOARD_ROWS - 4 + 1) * cols
+      expect(placementsForShape('I', cols).length).toBe(horiz + vert)
+    })
+    it(`placement masks have popcount 4 (cols=${cols})`, () => {
+      for (const pl of placementsForShape('T', cols)) {
+        let bits = 0
+        let m = pl.mask
+        while (m !== 0n) {
+          bits++
+          m &= m - 1n
+        }
+        expect(bits).toBe(4)
       }
-      expect(bits).toBe(4)
-    }
-  })
+    })
+  }
 })
