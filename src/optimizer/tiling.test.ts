@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { MOUNTS } from '../data/mounts'
 import type { Piece } from '../data/types'
-import { BOARD_BITS, FULL_BOARD, popcount } from './board'
+import { boardBits, fullBoard, popcount } from './board'
 import { BOARD_ROWS } from './types'
 import {
   emptyShapeCounts,
@@ -11,6 +12,10 @@ import {
   totalShapeCells,
   type ShapeCounts,
 } from './tiling'
+
+const ES_COLS = MOUNTS.electricScooter.cols // 7
+const TH_COLS = MOUNTS.techHoverboard.cols // 9
+const DS_COLS = MOUNTS.doomsteed.cols // 12
 
 function counts(parts: Partial<ShapeCounts>): ShapeCounts {
   return { ...emptyShapeCounts(), ...parts }
@@ -55,7 +60,6 @@ describe('enumerateDistributions', () => {
     const dists = enumerateDistributions(counts({ O: 2, T: 1 }), 2)
     expect(dists).toContainEqual(counts({ O: 2 }))
     expect(dists).toContainEqual(counts({ O: 1, T: 1 }))
-    // Cannot reach 2 with only 1 T and no other shapes — but {T:1} is only 1.
     expect(dists.length).toBe(2)
   })
 
@@ -78,9 +82,9 @@ describe('enumerateDistributions', () => {
   })
 })
 
-describe('tileDistribution', () => {
+describe('tileDistribution (Electric Scooter, 8x7)', () => {
   it('returns a trivial tiling for the empty distribution', () => {
-    const result = tileDistribution(emptyShapeCounts())
+    const result = tileDistribution(emptyShapeCounts(), ES_COLS)
     expect(result).not.toBeNull()
     expect(result!.slots).toEqual([])
     expect(result!.mask).toBe(0n)
@@ -88,7 +92,7 @@ describe('tileDistribution', () => {
   })
 
   it('places a single O piece', () => {
-    const result = tileDistribution(counts({ O: 1 }))
+    const result = tileDistribution(counts({ O: 1 }), ES_COLS)
     expect(result).not.toBeNull()
     expect(result!.slots.length).toBe(1)
     expect(result!.slots[0].shape).toBe('O')
@@ -98,33 +102,29 @@ describe('tileDistribution', () => {
 
   it('returns null when total cells exceed the board', () => {
     // 15 tetrominoes = 60 cells > 56 cells on 8×7
-    expect(tileDistribution(counts({ O: 15 }))).toBeNull()
+    expect(tileDistribution(counts({ O: 15 }), ES_COLS)).toBeNull()
   })
 
   it('returns null for 14 Os (cannot tile a 7-wide row)', () => {
-    // 3 Os per row-pair fills cols 0-5; col 6 is a 1-wide strip Os cannot reach.
-    // Max is 12 Os, so 14 is geometrically infeasible.
-    expect(tileDistribution(counts({ O: 14 }))).toBeNull()
+    expect(tileDistribution(counts({ O: 14 }), ES_COLS)).toBeNull()
   })
 
   it('tiles 14 I-pieces into a full board (8 lines)', () => {
-    const result = tileDistribution(counts({ I: 14 }))
+    const result = tileDistribution(counts({ I: 14 }), ES_COLS)
     expect(result).not.toBeNull()
     expect(result!.slots.length).toBe(14)
-    expect(result!.mask).toBe(FULL_BOARD)
+    expect(result!.mask).toBe(fullBoard(ES_COLS))
     expect(result!.lines).toBe(BOARD_ROWS)
   })
 
   it('short-circuits early when a target line count is reached', () => {
-    // A full-board tiling has 8 lines. Asking for >=4 should still return a
-    // tiling that satisfies that (it may or may not be full-board).
-    const result = tileDistribution(counts({ I: 14 }), 4)
+    const result = tileDistribution(counts({ I: 14 }), ES_COLS, 4)
     expect(result).not.toBeNull()
     expect(result!.lines).toBeGreaterThanOrEqual(4)
   })
 
   it('respects the per-distribution piece counts', () => {
-    const result = tileDistribution(counts({ O: 3, I: 2, T: 1 }))
+    const result = tileDistribution(counts({ O: 3, I: 2, T: 1 }), ES_COLS)
     expect(result).not.toBeNull()
     const observed = inventoryShapeCounts(
       result!.slots.map((s, i) => ({
@@ -138,7 +138,7 @@ describe('tileDistribution', () => {
   })
 
   it('uses only cells covered by the returned slots', () => {
-    const result = tileDistribution(counts({ O: 2, I: 2, T: 1 }))
+    const result = tileDistribution(counts({ O: 2, I: 2, T: 1 }), ES_COLS)
     expect(result).not.toBeNull()
     let union = 0n
     for (const s of result!.slots) union |= s.mask
@@ -146,15 +146,36 @@ describe('tileDistribution', () => {
     expect(popcount(result!.mask)).toBe(
       2 * SHAPE_CELLS.O + 2 * SHAPE_CELLS.I + 1 * SHAPE_CELLS.T,
     )
-    expect(popcount(result!.mask)).toBeLessThanOrEqual(BOARD_BITS)
+    expect(popcount(result!.mask)).toBeLessThanOrEqual(boardBits(ES_COLS))
   })
 
   it('finds the line-maximizing tiling when leaving cells empty', () => {
-    // 13 I-pieces = 52 cells. The 4 leftover cells should all fit into a
-    // single row to give max-L=7 (since I-pieces tile every row trivially).
-    const result = tileDistribution(counts({ I: 13 }))
+    const result = tileDistribution(counts({ I: 13 }), ES_COLS)
     expect(result).not.toBeNull()
     expect(result!.slots.length).toBe(13)
     expect(result!.lines).toBe(BOARD_ROWS - 1)
+  })
+})
+
+describe('tileDistribution (wider boards)', () => {
+  it('Tech Hoverboard tiles 18 I-pieces to a full 8×9 board', () => {
+    // 18 I-pieces = 72 cells, exactly the 8×9 board.
+    const result = tileDistribution(counts({ I: 18 }), TH_COLS)
+    expect(result).not.toBeNull()
+    expect(result!.slots.length).toBe(18)
+    expect(result!.mask).toBe(fullBoard(TH_COLS))
+    expect(result!.lines).toBe(BOARD_ROWS)
+  })
+
+  it('Doomsteed tiles 24 I-pieces to a full 8×12 board', () => {
+    const result = tileDistribution(counts({ I: 24 }), DS_COLS)
+    expect(result).not.toBeNull()
+    expect(result!.slots.length).toBe(24)
+    expect(result!.mask).toBe(fullBoard(DS_COLS))
+    expect(result!.lines).toBe(BOARD_ROWS)
+  })
+
+  it('Doomsteed rejects 25 I-pieces (overflows 96 cells)', () => {
+    expect(tileDistribution(counts({ I: 25 }), DS_COLS)).toBeNull()
   })
 })

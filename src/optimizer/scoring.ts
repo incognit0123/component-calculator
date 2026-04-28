@@ -1,29 +1,38 @@
 import { BUFF_TABLE } from '../data/buffTable'
-import { LINE_BONUS_TIERS, type MountLevel } from '../data/lineBonuses'
+import type { LineBonusTier, MountLevel } from '../data/lineBonuses'
 import { zeroStats } from '../data/stats'
 import type { Piece, StatKey, StatTotals } from '../data/types'
 
 /**
  * Mutates `stats` in place to add cumulative line-clear bonuses for L filled
- * rows at the given mount level. Tiers above `mountLevel`'s unlock threshold
- * are skipped. Tiers are defined in `src/data/lineBonuses.ts`.
+ * rows under the given tier list. Tiers above `mountLevel`'s unlock threshold
+ * are skipped.
+ *
+ * Tiers are applied in array order, so a `compute` tier (e.g. Doomsteed's
+ * 8-line toBosses-from-toPoisoned) must be ordered after every tier whose
+ * static bonus it depends on. Compute tiers see `stats` as fully accumulated
+ * by the caller (typically pre-mount + piece buffs) plus any earlier line
+ * bonuses applied within this call.
  */
 export function applyLineBonuses(
   stats: StatTotals,
   lines: number,
+  tiers: LineBonusTier[],
   mountLevel: MountLevel,
 ): void {
-  for (const tier of LINE_BONUS_TIERS) {
+  for (const tier of tiers) {
     if (lines < tier.minLines) continue
     if (tier.unlockedAtLevel > mountLevel) continue
-    for (const key of Object.keys(tier.bonus) as StatKey[]) {
-      const inc = tier.bonus[key]
-      if (inc != null) stats[key] += inc
+    const inc = tier.bonus ?? tier.compute?.(stats)
+    if (!inc) continue
+    for (const key of Object.keys(inc) as StatKey[]) {
+      const v = inc[key]
+      if (v != null) stats[key] += v
     }
   }
 }
 
-/** The damage formula from §2.2. Inputs are percentages. */
+/** The damage formula. Inputs are percentages. */
 export function formula(s: StatTotals): number {
   return (
     (1 + s.critDamage / 100) *
@@ -50,29 +59,37 @@ export function scoreLayout(
   currentStats: StatTotals,
   placedPieces: Piece[],
   lines: number,
+  tiers: LineBonusTier[],
   mountLevel: MountLevel,
 ): number {
   const stats = cloneStats(currentStats)
   addPieceBuffs(stats, placedPieces)
-  applyLineBonuses(stats, lines, mountLevel)
+  applyLineBonuses(stats, lines, tiers, mountLevel)
   return formula(stats)
 }
 
-/** Produce the final stats and the full mount contribution (pieces + lines). */
+/**
+ * Produce the final stats and the full mount contribution (pieces + lines).
+ *
+ * `compute` tiers depend on the running stat totals, so we accumulate piece
+ * buffs into a running copy of `currentStats` first, then run the tiers
+ * against that — ensuring compute tiers see pre-mount + piece + earlier-tier
+ * contributions.
+ */
 export function finalizeStats(
   currentStats: StatTotals,
   placedPieces: Piece[],
   lines: number,
+  tiers: LineBonusTier[],
   mountLevel: MountLevel,
 ): { final: StatTotals; buffs: StatTotals } {
-  const buffs = zeroStats()
-  for (const p of placedPieces) {
-    buffs[p.stat] += BUFF_TABLE[p.quality][p.stat]
-  }
-  applyLineBonuses(buffs, lines, mountLevel)
   const final = cloneStats(currentStats)
-  for (const k of Object.keys(final) as (keyof StatTotals)[]) {
-    final[k] += buffs[k]
+  addPieceBuffs(final, placedPieces)
+  applyLineBonuses(final, lines, tiers, mountLevel)
+
+  const buffs = zeroStats()
+  for (const k of Object.keys(buffs) as StatKey[]) {
+    buffs[k] = final[k] - currentStats[k]
   }
   return { final, buffs }
 }

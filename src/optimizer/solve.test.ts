@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { MOUNTS } from '../data/mounts'
 import { zeroStats } from '../data/stats'
 import type { Piece, QualityTier, ShapeKey, StatKey } from '../data/types'
 import { formula, scoreLayout } from './scoring'
 import { solve } from './solve'
+
+const ES_TIERS = MOUNTS.electricScooter.lineBonusTiers
+const DS_TIERS = MOUNTS.doomsteed.lineBonusTiers
 
 let nextId = 0
 function mk(shape: ShapeKey, quality: QualityTier, stat: StatKey): Piece {
@@ -18,6 +22,7 @@ describe('solve', () => {
     expect(result.unusedPieceIds).toEqual([])
     expect(result.afterScore).toBeCloseTo(formula(stats), 10)
     expect(result.beforeScore).toBeCloseTo(formula(stats), 10)
+    expect(result.mountKey).toBe('electricScooter')
   })
 
   it('places all inventory pieces when K < G (small inventory)', async () => {
@@ -30,7 +35,7 @@ describe('solve', () => {
     expect(result.placements.length).toBe(3)
     expect(result.unusedPieceIds.length).toBe(0)
     expect(result.afterScore).toBeCloseTo(
-      scoreLayout(zeroStats(), inventory, result.linesFilled, 0),
+      scoreLayout(zeroStats(), inventory, result.linesFilled, ES_TIERS, 0),
       10,
     )
   })
@@ -89,7 +94,6 @@ describe('solve', () => {
       mk('O', 'good', 'shieldDamage'),
     ]
     const result = await solve(inventory, zeroStats(), { mode: 'full' })
-    // All three pieces fit, no full rows.
     expect(result.placements.length).toBe(3)
     expect(result.linesFilled).toBe(0)
     expect(result.afterScore).toBeCloseTo(1.33 * 1.42 * 1.05, 8)
@@ -123,7 +127,6 @@ describe('solve', () => {
     const elapsed = performance.now() - t0
     expect(result.placements.length).toBeGreaterThan(0)
     expect(result.afterScore).toBeGreaterThan(result.beforeScore)
-    // Sanity: should be way under 10s on this fixture.
     expect(elapsed).toBeLessThan(10000)
   }, 30000)
 
@@ -140,17 +143,10 @@ describe('solve', () => {
       mode: 'full',
       mountLevel: 8,
     })
-    // Higher level only unlocks additional non-negative bonuses; the optimum
-    // at lvl8 includes lvl0's reachable scores as a subset.
     expect(lvl8.afterScore).toBeGreaterThanOrEqual(lvl0.afterScore - 1e-9)
   })
 
   it('mount level 8 fires the level-gated tiers when lines >= 5', async () => {
-    // Inventory of 7 I pieces, all buffing crit. Optimal placement stacks
-    // them horizontally to leave 7 nearly-full rows; combined with one of
-    // shapes T/J/L/O the 8×7 board tiles to >=5 filled rows. Either way,
-    // we test bonus application by scoring a known layout via the same
-    // line count that the optimizer reports.
     const inventory: Piece[] = []
     for (let i = 0; i < 14; i++) inventory.push(mk('I', 'legend', 'critDamage'))
 
@@ -158,10 +154,7 @@ describe('solve', () => {
       mode: 'full',
       mountLevel: 8,
     })
-    // Sanity: with lots of pieces, optimizer should reach at least 4 lines.
     expect(lvl8.linesFilled).toBeGreaterThanOrEqual(0)
-    // If the result hit >=5 lines, the lvl-2 tier should have contributed
-    // laceration; confirms gating actually consults mount level.
     if (lvl8.linesFilled >= 5) {
       expect(lvl8.buffsFromMount.laceration).toBeGreaterThan(0)
     }
@@ -177,8 +170,53 @@ describe('solve', () => {
       mode: 'full',
       isCancelled: () => ++calls > 2,
     })
-    // Should still return a valid result structure even if cancelled.
     expect(result.mode).toBe('full')
     expect(typeof result.afterScore).toBe('number')
   })
+
+  it('Doomsteed (12-wide) places more pieces than Electric Scooter on the same inventory', async () => {
+    const inventory: Piece[] = []
+    for (let i = 0; i < 24; i++) inventory.push(mk('I', 'legend', 'toPoisoned'))
+
+    const es = await solve(inventory, zeroStats(), {
+      mode: 'normal',
+      mountKey: 'electricScooter',
+      mountLevel: 0,
+    })
+    const ds = await solve(inventory, zeroStats(), {
+      mode: 'normal',
+      mountKey: 'doomsteed',
+      mountLevel: 0,
+    })
+
+    expect(es.mountKey).toBe('electricScooter')
+    expect(ds.mountKey).toBe('doomsteed')
+    expect(ds.placements.length).toBeGreaterThanOrEqual(es.placements.length)
+  }, 30000)
+
+  it('Doomsteed level 8 with 8 filled lines triggers the dynamic toBosses tier', async () => {
+    // Inventory of 24 I-pieces buffing toPoisoned. With Doomsteed lvl8 and
+    // 8 lines filled, line bonuses alone push toPoisoned past 160 → +5 toBosses
+    // from the dynamic tier, plus +5 from the static 7-line tier = +10 minimum.
+    const inventory: Piece[] = []
+    for (let i = 0; i < 24; i++) inventory.push(mk('I', 'legend', 'toPoisoned'))
+
+    const result = await solve(inventory, zeroStats(), {
+      mode: 'normal',
+      mountKey: 'doomsteed',
+      mountLevel: 8,
+    })
+
+    expect(result.linesFilled).toBe(8)
+    expect(result.buffsFromMount.toBosses).toBeGreaterThanOrEqual(10)
+
+    // Cross-check: scoreLayout with the same inputs matches.
+    const placedPieces = result.placements
+      .map((pl) => inventory.find((p) => p.id === pl.pieceId))
+      .filter((p): p is Piece => p != null)
+    expect(result.afterScore).toBeCloseTo(
+      scoreLayout(zeroStats(), placedPieces, result.linesFilled, DS_TIERS, 8),
+      8,
+    )
+  }, 30000)
 })

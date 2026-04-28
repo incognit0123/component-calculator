@@ -1,14 +1,14 @@
 import { SHAPE_KEYS, SHAPE_ROTATIONS } from '../data/shapes'
 import type { Piece, ShapeKey } from '../data/types'
 import {
-  BOARD_BITS,
+  boardBits,
   countFullRows,
-  FULL_ROW_MASKS,
+  fullRowMasks,
   placementsForShape,
   popcount,
 } from './board'
 import type { ShapePlacement } from './board'
-import { BOARD_COLS, BOARD_ROWS } from './types'
+import { BOARD_ROWS } from './types'
 
 export type ShapeCounts = Record<ShapeKey, number>
 
@@ -92,18 +92,20 @@ function lowestBitIndex(mask: bigint): number {
 }
 
 const PLACEMENTS_BY_LOWEST_CELL: Map<
-  ShapeKey,
+  string,
   Map<number, ShapePlacement[]>
 > = new Map()
 
-/** Index of placements by the cell index of their lowest set bit. */
+/** Index of placements by the cell index of their lowest set bit, per cols. */
 function placementsByLowestCell(
   shape: ShapeKey,
+  cols: number,
 ): Map<number, ShapePlacement[]> {
-  const cached = PLACEMENTS_BY_LOWEST_CELL.get(shape)
+  const cacheKey = `${shape}|${cols}`
+  const cached = PLACEMENTS_BY_LOWEST_CELL.get(cacheKey)
   if (cached) return cached
   const map = new Map<number, ShapePlacement[]>()
-  for (const pl of placementsForShape(shape)) {
+  for (const pl of placementsForShape(shape, cols)) {
     const low = lowestBitIndex(pl.mask)
     let list = map.get(low)
     if (!list) {
@@ -112,7 +114,7 @@ function placementsByLowestCell(
     }
     list.push(pl)
   }
-  PLACEMENTS_BY_LOWEST_CELL.set(shape, map)
+  PLACEMENTS_BY_LOWEST_CELL.set(cacheKey, map)
   return map
 }
 
@@ -122,10 +124,10 @@ function placementsByLowestCell(
  * tiling exists at all.
  *
  * Search strategy: branch-and-bound DFS short-circuiting as soon as a tiling
- * is found at `min(targetLines, floor(cellsToPlace / BOARD_COLS))` — i.e.,
- * the lower of the caller's target and the geometric line ceiling. If that
- * level turns out to be unreachable due to shape constraints, the search
- * degrades to returning the best tiling actually found.
+ * is found at `min(targetLines, floor(cellsToPlace / cols))` — i.e., the
+ * lower of the caller's target and the geometric line ceiling. If that level
+ * turns out to be unreachable due to shape constraints, the search degrades
+ * to returning the best tiling actually found.
  *
  * Search order: at each step, address the lowest-indexed empty cell and
  * either place a piece covering it, or (if there are still more empty cells
@@ -142,13 +144,16 @@ const TILE_NODE_BUDGET = 200_000
 
 export function tileDistribution(
   dist: ShapeCounts,
+  cols: number,
   targetLines: number = BOARD_ROWS,
 ): TilingResult | null {
   const cellsToPlace = totalShapeCells(dist)
-  if (cellsToPlace > BOARD_BITS) return null
+  const totalCells = boardBits(cols)
+  if (cellsToPlace > totalCells) return null
 
-  const geometricMaxLines = Math.floor(cellsToPlace / BOARD_COLS)
+  const geometricMaxLines = Math.floor(cellsToPlace / cols)
   const effectiveTarget = Math.min(targetLines, geometricMaxLines)
+  const rowMasks = fullRowMasks(cols)
 
   const remaining: ShapeCounts = { ...dist }
   const slots: SlotPlacement[] = []
@@ -158,7 +163,7 @@ export function tileDistribution(
   let nodes = 0
 
   function record(occ: bigint): void {
-    const lines = countFullRows(occ)
+    const lines = countFullRows(occ, cols)
     if (lines > bestLines) {
       bestLines = lines
       best = { slots: slots.slice(), mask: occ, lines }
@@ -176,9 +181,9 @@ export function tileDistribution(
     let alreadyFull = 0
     const cellsNeededPerRow: number[] = []
     for (let r = 0; r < BOARD_ROWS; r++) {
-      const cellsInRow = popcount(occ & FULL_ROW_MASKS[r])
-      if (cellsInRow === BOARD_COLS) alreadyFull++
-      else cellsNeededPerRow.push(BOARD_COLS - cellsInRow)
+      const cellsInRow = popcount(occ & rowMasks[r])
+      if (cellsInRow === cols) alreadyFull++
+      else cellsNeededPerRow.push(cols - cellsInRow)
     }
     cellsNeededPerRow.sort((a, b) => a - b)
     let extra = 0
@@ -204,13 +209,13 @@ export function tileDistribution(
     }
 
     let cellIdx = fromIdx
-    while (cellIdx < BOARD_BITS && (occ & (1n << BigInt(cellIdx))) !== 0n) {
+    while (cellIdx < totalCells && (occ & (1n << BigInt(cellIdx))) !== 0n) {
       cellIdx++
     }
-    if (cellIdx >= BOARD_BITS) return
+    if (cellIdx >= totalCells) return
 
     // Loose feasibility prune: more cells must lie ahead than pieces require.
-    if (BOARD_BITS - cellIdx < remainingCells) return
+    if (totalCells - cellIdx < remainingCells) return
 
     // Upper-bound prune: if the best line count reachable from here can
     // neither improve `bestLines` nor reach `effectiveTarget`, skip.
@@ -220,7 +225,7 @@ export function tileDistribution(
     for (const shape of SHAPE_KEYS) {
       if (stop) return
       if (remaining[shape] === 0) continue
-      const placements = placementsByLowestCell(shape).get(cellIdx)
+      const placements = placementsByLowestCell(shape, cols).get(cellIdx)
       if (!placements) continue
       remaining[shape]--
       for (const pl of placements) {
@@ -240,7 +245,7 @@ export function tileDistribution(
     }
 
     if (stop) return
-    if (BOARD_BITS - cellIdx - 1 >= remainingCells) {
+    if (totalCells - cellIdx - 1 >= remainingCells) {
       dfs(occ, cellIdx + 1, remainingCells)
     }
   }

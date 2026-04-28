@@ -11,32 +11,35 @@ export const MAX_MOUNT_LEVEL = 8
 export interface LineBonusTier {
   /** Minimum number of filled rows for this tier to apply. */
   minLines: number
-  /** Stat increments granted by this tier, cumulative on top of lower tiers. */
-  bonus: Partial<StatTotals>
   /**
    * Minimum mount level required for this tier to apply. Tiers above the
    * player's current mount level are silently skipped.
    */
   unlockedAtLevel: MountLevel
+  /**
+   * Static stat increments granted by this tier, cumulative on top of lower
+   * tiers. Mutually exclusive with `compute`.
+   */
+  bonus?: Partial<StatTotals>
+  /**
+   * Dynamic bonus that depends on the running stat totals (pre-mount + piece
+   * buffs + earlier line-bonus tiers, all already accumulated). Mutually
+   * exclusive with `bonus`. Used for Doomsteed's 8-line toBosses tier, which
+   * scales with the final toPoisoned value.
+   */
+  compute?: (statsSoFar: StatTotals) => Partial<StatTotals>
 }
 
-export const LINE_BONUS_TIERS: LineBonusTier[] = [
-  { minLines: 1, bonus: { toWeakened: 10 }, unlockedAtLevel: 0 },
-  { minLines: 3, bonus: { toWeakened: 15, critDamage: 20 }, unlockedAtLevel: 0 },
-  { minLines: 4, bonus: { critDamage: 35 }, unlockedAtLevel: 0 },
-  { minLines: 5, bonus: { laceration: 10 }, unlockedAtLevel: 2 },
-  { minLines: 6, bonus: { toWeakened: 20, critDamage: 55 }, unlockedAtLevel: 4 },
-  { minLines: 7, bonus: { toWeakened: 35, critDamage: 90 }, unlockedAtLevel: 6 },
-  { minLines: 8, bonus: { laceration: 20 }, unlockedAtLevel: 8 },
-]
-
 /**
- * Highest line count that can grant a bonus at the given mount level. Beyond
- * this, additional filled rows don't change the score.
+ * Highest line count that can grant a bonus at the given mount level for the
+ * given tier list. Beyond this, additional filled rows don't change the score.
  */
-export function maxBonusLinesForLevel(level: MountLevel): number {
+export function maxBonusLinesForLevel(
+  level: MountLevel,
+  tiers: LineBonusTier[],
+): number {
   let max = 0
-  for (const tier of LINE_BONUS_TIERS) {
+  for (const tier of tiers) {
     if (tier.unlockedAtLevel <= level && tier.minLines > max) {
       max = tier.minLines
     }

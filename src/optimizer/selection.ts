@@ -1,5 +1,5 @@
 import { BUFF_TABLE } from '../data/buffTable'
-import type { MountLevel } from '../data/lineBonuses'
+import type { LineBonusTier, MountLevel } from '../data/lineBonuses'
 import { SHAPE_KEYS } from '../data/shapes'
 import type {
   Piece,
@@ -35,16 +35,28 @@ export interface SelectionResult {
  * Caller must ensure `dist[shape] <= inventoryShapeCounts(inventory)[shape]`
  * for every shape — otherwise no feasible selection exists and the result
  * falls back to the no-pieces baseline.
+ *
+ * NOTE: this routine treats the line bonus as a static increment applied
+ * once up-front. That holds for tiers with fixed `bonus` values; for tiers
+ * with a `compute` callback (e.g. Doomsteed's 8-line toBosses-from-toPoisoned),
+ * the bonus is sampled with the *baseline* stats (currentStats + earlier
+ * static tiers) — i.e. before piece buffs are added. So the optimizer's
+ * objective slightly under-estimates the contribution of a piece that pushes
+ * toPoisoned past the next 160% threshold. The optimizer's selected layout
+ * is still scored end-to-end via `scoreLayout`, which evaluates `compute`
+ * against the final stats, so the displayed score is correct; only the
+ * selection objective is approximate.
  */
 export function selectPieces(
   inventory: Piece[],
   dist: ShapeCounts,
   lineCount: number,
   currentStats: StatTotals,
+  tiers: LineBonusTier[],
   mountLevel: MountLevel,
 ): SelectionResult {
   const baseStats = cloneStats(currentStats)
-  applyLineBonuses(baseStats, lineCount, mountLevel)
+  applyLineBonuses(baseStats, lineCount, tiers, mountLevel)
   const baseScore = formula(baseStats)
 
   const groups = new Map<string, Bucket>()

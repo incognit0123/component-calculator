@@ -13,41 +13,57 @@ import {
   maxBonusLinesForLevel,
   type MountLevel,
 } from './data/lineBonuses'
+import {
+  DEFAULT_MOUNT_KEY,
+  isMountKey,
+  MOUNT_KEYS,
+  MOUNTS,
+  type MountKey,
+} from './data/mounts'
 import { QUALITIES } from './data/qualities'
-import { SHAPE_KEYS } from './data/shapes'
+import { SHAPE_KEYS, SHAPE_ROTATIONS, shapeBounds } from './data/shapes'
 import { STAT_KEYS, zeroStats } from './data/stats'
 import type { OptimizerMode, Piece, StatTotals } from './data/types'
 import { usePersistedState } from './hooks/usePersistedState'
 import { useOptimizer } from './hooks/useOptimizer'
+import { countFullRows } from './optimizer/board'
 import { finalizeStats, formula } from './optimizer/scoring'
+import type { Placement } from './optimizer/types'
 
 const STATS_KEY = 'mount-opt:current-stats:v1'
 const PIECES_KEY = 'mount-opt:pieces:v1'
 const MODE_KEY = 'mount-opt:mode:v1'
-const MOUNT_LEVEL_KEY = 'mount-opt:mount-level:v1'
+const LEGACY_MOUNT_LEVEL_KEY = 'mount-opt:mount-level:v1'
+const MOUNT_LEVELS_KEY = 'mount-opt:mount-levels:v1'
+const SELECTED_MOUNT_KEY = 'mount-opt:selected-mount:v1'
 const FULL_LIMIT_KEY = 'mount-opt:full-time-limit:v1'
 const PROFILES_KEY = 'mount-opt:profiles:v1'
 const EXPORT_PREFIX_V1 = 'mount-opt:v1:'
 const EXPORT_PREFIX_V2 = 'mount-opt:v2:'
 const EXPORT_PREFIX_V3 = 'mount-opt:v3:'
+const EXPORT_PREFIX_V4 = 'mount-opt:v4:'
+
+type MountLevelMap = Record<MountKey, MountLevel>
 
 interface ExportedConfig {
   currentStats: StatTotals
   pieces: Piece[]
   mode: OptimizerMode
-  mountLevel: MountLevel
+  selectedMountKey: MountKey
+  mountLevels: MountLevelMap
   fullTimeLimit: FullTimeLimit
 }
 
 type CompactMode = 'n' | 'f'
 type CompactPiece = [shape: Piece['shape'], quality: Piece['quality'], stat: Piece['stat']]
 
-interface ExportedConfigV3 {
-  version: 3
+interface ExportedConfigV4 {
+  version: 4
   s: number[]
   p: CompactPiece[]
   m: CompactMode
-  l: number
+  mt: MountKey
+  lv: { electricScooter: number; techHoverboard: number; doomsteed: number }
   t: [enabled: 0 | 1, seconds: number]
 }
 
@@ -72,17 +88,22 @@ function base64ToBytes(base64: string): Uint8Array {
 }
 
 function encodeConfig(config: ExportedConfig): string {
-  const compact: ExportedConfigV3 = {
-    version: 3,
+  const compact: ExportedConfigV4 = {
+    version: 4,
     s: STAT_KEYS.map((key) => config.currentStats[key]),
     p: config.pieces.map((piece) => [piece.shape, piece.quality, piece.stat]),
     m: config.mode === 'normal' ? 'n' : 'f',
-    l: config.mountLevel,
+    mt: config.selectedMountKey,
+    lv: {
+      electricScooter: config.mountLevels.electricScooter,
+      techHoverboard: config.mountLevels.techHoverboard,
+      doomsteed: config.mountLevels.doomsteed,
+    },
     t: [config.fullTimeLimit.enabled ? 1 : 0, config.fullTimeLimit.seconds],
   }
   const json = JSON.stringify(compact)
   const base64 = bytesToBase64(new TextEncoder().encode(json))
-  return `${EXPORT_PREFIX_V3}${base64}`
+  return `${EXPORT_PREFIX_V4}${base64}`
 }
 
 function isMountLevel(value: unknown): value is MountLevel {
@@ -92,6 +113,12 @@ function isMountLevel(value: unknown): value is MountLevel {
     value >= 0 &&
     value <= MAX_MOUNT_LEVEL
   )
+}
+
+function isMountLevelMap(value: unknown): value is MountLevelMap {
+  if (typeof value !== 'object' || value == null) return false
+  const record = value as Record<string, unknown>
+  return MOUNT_KEYS.every((key) => isMountLevel(record[key]))
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -125,6 +152,29 @@ function isFullTimeLimit(value: unknown): value is FullTimeLimit {
   )
 }
 
+function defaultMountLevels(): MountLevelMap {
+  return { electricScooter: 0, techHoverboard: 0, doomsteed: 0 }
+}
+
+/**
+ * Seed the per-mount levels from the legacy single-mount-level localStorage
+ * key (used pre v4). Called once at module init; if the v4 key already exists,
+ * usePersistedState will overwrite this with the saved value.
+ */
+function legacySeededMountLevels(): MountLevelMap {
+  const out = defaultMountLevels()
+  if (typeof window === 'undefined') return out
+  try {
+    const raw = window.localStorage.getItem(LEGACY_MOUNT_LEVEL_KEY)
+    if (raw == null) return out
+    const parsed = JSON.parse(raw)
+    if (isMountLevel(parsed)) out.electricScooter = parsed
+  } catch {
+    // ignore
+  }
+  return out
+}
+
 function decodeCompactPayload(
   parsed: Record<string, unknown>,
   expectedVersion: 2 | 3,
@@ -153,12 +203,12 @@ function decodeCompactPayload(
 
   if (!validShape) throw new Error('Import string data is invalid.')
 
-  let mountLevel: MountLevel = 0
+  let legacyMountLevel: MountLevel = 0
   if (expectedVersion === 3) {
     if (!isMountLevel(parsed.l)) {
       throw new Error('Import string data is invalid.')
     }
-    mountLevel = parsed.l
+    legacyMountLevel = parsed.l
   }
 
   const statValues = parsed.s as number[]
@@ -181,7 +231,8 @@ function decodeCompactPayload(
     currentStats,
     pieces,
     mode: parsed.m === 'n' ? 'normal' : 'full',
-    mountLevel,
+    selectedMountKey: DEFAULT_MOUNT_KEY,
+    mountLevels: { ...defaultMountLevels(), electricScooter: legacyMountLevel },
     fullTimeLimit: {
       enabled: enabledFlag === 1,
       seconds,
@@ -189,7 +240,67 @@ function decodeCompactPayload(
   }
 }
 
+function decodeV4Payload(parsed: Record<string, unknown>): ExportedConfig {
+  const validBaseShape =
+    parsed.version === 4 &&
+    Array.isArray(parsed.s) &&
+    parsed.s.length === STAT_KEYS.length &&
+    parsed.s.every((value) => isFiniteNumber(value)) &&
+    Array.isArray(parsed.p) &&
+    parsed.p.every((piece) => {
+      if (!Array.isArray(piece) || piece.length !== 3) return false
+      const [shape, quality, stat] = piece
+      return (
+        SHAPE_KEYS.includes(shape as (typeof SHAPE_KEYS)[number]) &&
+        QUALITIES.some((q) => q.key === quality) &&
+        STAT_KEYS.includes(stat as (typeof STAT_KEYS)[number])
+      )
+    }) &&
+    (parsed.m === 'n' || parsed.m === 'f') &&
+    isMountKey(parsed.mt) &&
+    isMountLevelMap(parsed.lv) &&
+    Array.isArray(parsed.t) &&
+    parsed.t.length === 2 &&
+    (parsed.t[0] === 0 || parsed.t[0] === 1) &&
+    isFiniteNumber(parsed.t[1]) &&
+    parsed.t[1] >= 1
+
+  if (!validBaseShape) throw new Error('Import string data is invalid.')
+
+  const statValues = parsed.s as number[]
+  const compactPieces = parsed.p as CompactPiece[]
+  const [enabledFlag, seconds] = parsed.t as [0 | 1, number]
+
+  const currentStats = STAT_KEYS.reduce<StatTotals>((acc, key, index) => {
+    acc[key] = statValues[index]
+    return acc
+  }, zeroStats())
+
+  const pieces: Piece[] = compactPieces.map(([shape, quality, stat]) => ({
+    id: crypto.randomUUID(),
+    shape,
+    quality,
+    stat,
+  }))
+
+  return {
+    currentStats,
+    pieces,
+    mode: parsed.m === 'n' ? 'normal' : 'full',
+    selectedMountKey: parsed.mt as MountKey,
+    mountLevels: parsed.lv as MountLevelMap,
+    fullTimeLimit: { enabled: enabledFlag === 1, seconds },
+  }
+}
+
 function decodeConfig(raw: string): ExportedConfig {
+  if (raw.startsWith(EXPORT_PREFIX_V4)) {
+    const payload = raw.slice(EXPORT_PREFIX_V4.length).trim()
+    const json = new TextDecoder().decode(base64ToBytes(payload))
+    const parsed = JSON.parse(json) as Record<string, unknown>
+    return decodeV4Payload(parsed)
+  }
+
   if (raw.startsWith(EXPORT_PREFIX_V3)) {
     const payload = raw.slice(EXPORT_PREFIX_V3.length).trim()
     const json = new TextDecoder().decode(base64ToBytes(payload))
@@ -224,12 +335,22 @@ function decodeConfig(raw: string): ExportedConfig {
       currentStats: parsed.currentStats,
       pieces: parsed.pieces,
       mode: parsed.mode,
-      mountLevel: 0,
+      selectedMountKey: DEFAULT_MOUNT_KEY,
+      mountLevels: defaultMountLevels(),
       fullTimeLimit: parsed.fullTimeLimit,
     }
   }
 
   throw new Error('Unrecognized import string format.')
+}
+
+/**
+ * Width of a placement in cells = bounding-box col-extent of the rotated
+ * shape. Used to decide whether a placement fits inside a board narrower
+ * than the one it was generated for.
+ */
+function placementWidth(shape: Piece['shape'], rotation: number): number {
+  return shapeBounds(SHAPE_ROTATIONS[shape][rotation]).cols
 }
 
 export default function App() {
@@ -243,10 +364,15 @@ export default function App() {
     'normal',
     (raw): raw is OptimizerMode => raw === 'normal' || raw === 'full',
   )
-  const [mountLevel, setMountLevel] = usePersistedState<MountLevel>(
-    MOUNT_LEVEL_KEY,
-    0,
-    (raw): raw is MountLevel => isMountLevel(raw),
+  const [selectedMountKey, setSelectedMountKey] = usePersistedState<MountKey>(
+    SELECTED_MOUNT_KEY,
+    DEFAULT_MOUNT_KEY,
+    isMountKey,
+  )
+  const [mountLevels, setMountLevels] = usePersistedState<MountLevelMap>(
+    MOUNT_LEVELS_KEY,
+    legacySeededMountLevels(),
+    isMountLevelMap,
   )
   const [fullTimeLimit, setFullTimeLimit] = usePersistedState<FullTimeLimit>(
     FULL_LIMIT_KEY,
@@ -268,43 +394,88 @@ export default function App() {
   const [importError, setImportError] = useState<string | null>(null)
   const [exportCopyStatus, setExportCopyStatus] = useState<string | null>(null)
 
+  const selectedMount = MOUNTS[selectedMountKey]
+  const selectedMountLevel = mountLevels[selectedMountKey]
+
+  const handleMountLevelChange = (key: MountKey, level: MountLevel) => {
+    setMountLevels((prev) => ({ ...prev, [key]: level }))
+  }
+
   const handleRun = () => {
     const timeBudgetMs =
       mode === 'full' && fullTimeLimit.enabled
         ? fullTimeLimit.seconds * 1000
         : undefined
-    run({ currentStats, pieces, mode, mountLevel, timeBudgetMs })
+    run({
+      currentStats,
+      pieces,
+      mode,
+      mountKey: selectedMountKey,
+      mountLevel: selectedMountLevel,
+      timeBudgetMs,
+    })
   }
 
   const result = status.result ?? status.progress?.partial ?? null
-  const unusedSet = useMemo(
-    () => new Set(result?.unusedPieceIds ?? []),
-    [result?.unusedPieceIds],
-  )
 
-  // Re-derive the displayed score and mount-buff totals against the *current*
-  // mount level + stats so the UI stays accurate when the user adjusts stars
-  // without re-running the optimizer. The placement layout itself stays fixed
-  // (it may no longer be optimal — re-running gets a fresh layout).
+  // Re-derive the displayed result against the *currently selected* mount.
+  // If the result's layout was generated for a wider board, pieces past the
+  // current mount's right edge are clipped into the unused list (and re-added
+  // automatically when the user switches back to a wide-enough mount, since
+  // we never mutate `result.placements`).
   const displayedResult = useMemo(() => {
     if (!result) return null
+    const cols = selectedMount.cols
+    const tiers = selectedMount.lineBonusTiers
     const pieceById = new Map(pieces.map((p) => [p.id, p]))
-    const placedPieces = result.placements
+
+    const visiblePlacements: Placement[] = []
+    const droppedPieceIds: string[] = []
+    for (const pl of result.placements) {
+      const piece = pieceById.get(pl.pieceId)
+      if (!piece) continue
+      const w = placementWidth(piece.shape, pl.rotation)
+      if (pl.col + w <= cols) {
+        visiblePlacements.push(pl)
+      } else {
+        droppedPieceIds.push(pl.pieceId)
+      }
+    }
+
+    const visiblePieces = visiblePlacements
       .map((pl) => pieceById.get(pl.pieceId))
       .filter((p): p is Piece => p != null)
+
+    let occ = 0n
+    for (const pl of visiblePlacements) {
+      const piece = pieceById.get(pl.pieceId)
+      if (!piece) continue
+      for (const [dr, dc] of SHAPE_ROTATIONS[piece.shape][pl.rotation]) {
+        occ |= 1n << BigInt((pl.row + dr) * cols + (pl.col + dc))
+      }
+    }
+    const linesFilled = countFullRows(occ, cols)
+
     const { final, buffs } = finalizeStats(
       currentStats,
-      placedPieces,
-      result.linesFilled,
-      mountLevel,
+      visiblePieces,
+      linesFilled,
+      tiers,
+      selectedMountLevel,
     )
+
     return {
-      ...result,
+      placements: visiblePlacements,
+      unusedPieceIds: [...result.unusedPieceIds, ...droppedPieceIds],
       afterScore: formula(final),
       beforeScore: formula(currentStats),
       buffsFromMount: buffs,
+      linesFilled,
+      elapsedMs: result.elapsedMs,
+      mode: result.mode,
+      truncated: result.truncated,
     }
-  }, [result, pieces, currentStats, mountLevel])
+  }, [result, pieces, currentStats, selectedMount, selectedMountLevel])
 
   const currentScore = useMemo(() => formula(currentStats), [currentStats])
 
@@ -327,10 +498,11 @@ export default function App() {
         currentStats,
         pieces,
         mode,
-        mountLevel,
+        selectedMountKey,
+        mountLevels,
         fullTimeLimit,
       }),
-    [currentStats, fullTimeLimit, mode, mountLevel, pieces],
+    [currentStats, fullTimeLimit, mode, mountLevels, pieces, selectedMountKey],
   )
 
   const handleOpenExport = () => {
@@ -353,7 +525,8 @@ export default function App() {
       setCurrentStats(parsed.currentStats)
       setPieces(parsed.pieces)
       setMode(parsed.mode)
-      setMountLevel(parsed.mountLevel)
+      setSelectedMountKey(parsed.selectedMountKey)
+      setMountLevels(parsed.mountLevels)
       setFullTimeLimit(parsed.fullTimeLimit)
       setImportError(null)
       setImportText('')
@@ -370,7 +543,8 @@ export default function App() {
     setCurrentStats(parsed.currentStats)
     setPieces(parsed.pieces)
     setMode(parsed.mode)
-    setMountLevel(parsed.mountLevel)
+    setSelectedMountKey(parsed.selectedMountKey)
+    setMountLevels(parsed.mountLevels)
     setFullTimeLimit(parsed.fullTimeLimit)
   }
 
@@ -490,7 +664,8 @@ export default function App() {
                 Mount Board Optimizer
               </h1>
               <p className="text-xs text-gray-400">
-                Survivor.io · finds the best 8×7 layout for your mount pieces
+                Survivor.io · finds the best layout for your{' '}
+                {selectedMount.name} ({selectedMount.cols} cols × 8 rows)
               </p>
             </div>
             <div className="text-right text-xs text-gray-400 flex flex-col items-end gap-2">
@@ -542,9 +717,16 @@ export default function App() {
             <PieceInventory
               pieces={pieces}
               onChange={setPieces}
-              unusedIds={unusedSet}
+              unusedIds={
+                new Set(displayedResult?.unusedPieceIds ?? [])
+              }
             />
-            <MountPanel level={mountLevel} onChange={setMountLevel} />
+            <MountPanel
+              selectedMount={selectedMountKey}
+              levels={mountLevels}
+              onSelectMount={setSelectedMountKey}
+              onLevelChange={handleMountLevelChange}
+            />
           </div>
 
           <div className="flex flex-col gap-5">
@@ -593,7 +775,11 @@ export default function App() {
                   <BoardView
                     pieces={pieces}
                     placements={displayedResult.placements}
-                    maxHighlightedLines={maxBonusLinesForLevel(mountLevel)}
+                    cols={selectedMount.cols}
+                    maxHighlightedLines={maxBonusLinesForLevel(
+                      selectedMountLevel,
+                      selectedMount.lineBonusTiers,
+                    )}
                   />
                 </div>
 
@@ -663,8 +849,8 @@ export default function App() {
 
             <p className="text-xs text-gray-400">
               Copy this string and share or save it for later import. New
-              exports use a compact v2 format; import accepts older v1 exports
-              too.
+              exports use a compact v4 format; import accepts older v1/v2/v3
+              exports too.
             </p>
 
             <textarea
@@ -733,7 +919,7 @@ export default function App() {
                 setImportText(e.target.value)
               }}
               className="w-full h-36 bg-bg-elev border border-bg-line rounded-md p-3 text-xs text-white focus:outline-none focus:border-accent"
-              placeholder="mount-opt:v2:..."
+              placeholder="mount-opt:v4:..."
             />
 
             {importError && <p className="text-xs text-red-400">{importError}</p>}
