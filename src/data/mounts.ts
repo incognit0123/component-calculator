@@ -1,4 +1,4 @@
-import type { LineBonusTier } from './lineBonuses'
+import type { LineBonusTier, MountLevel } from './lineBonuses'
 
 export type MountKey = 'electricScooter' | 'techHoverboard' | 'doomsteed'
 
@@ -11,6 +11,15 @@ export interface MountSpec {
   /** Board column count. Rows are always 8 across all mounts. */
   cols: number
   lineBonusTiers: LineBonusTier[]
+  /**
+   * Sync-rate percentages indexed by MountLevel (0..8). When this mount is
+   * NOT the equipped one, pieces placed on its board only contribute
+   * (syncRates[level] / 100) of their full stat buff to the player. Values
+   * are absolute, not cumulative — `syncRates[1]` is the rate at level 1, not
+   * an increment over `syncRates[0]`. The equipped mount always grants
+   * full buffs regardless of this list.
+   */
+  syncRates: number[]
 }
 
 export const MOUNT_KEYS: MountKey[] = [
@@ -58,6 +67,12 @@ const DOOMSTEED_TIERS: LineBonusTier[] = [
   },
 ]
 
+// Sync-rate percentages indexed by MountLevel 0..8 (0 stars, then 1..4 yellow,
+// then 1..4 red). Source: in-game mount data.
+const ELECTRIC_SCOOTER_SYNC_RATES: number[] = [20, 22, 24, 28, 32, 38, 44, 52, 60]
+const TECH_HOVERBOARD_SYNC_RATES: number[] = [30, 33, 36, 40, 45, 50, 55, 60, 75]
+const DOOMSTEED_SYNC_RATES: number[] = [40, 44, 48, 55, 62, 71, 80, 90, 100]
+
 export const MOUNTS: Record<MountKey, MountSpec> = {
   electricScooter: {
     key: 'electricScooter',
@@ -66,6 +81,7 @@ export const MOUNTS: Record<MountKey, MountSpec> = {
     bgColor: '#4A93E8',
     cols: 7,
     lineBonusTiers: ELECTRIC_SCOOTER_TIERS,
+    syncRates: ELECTRIC_SCOOTER_SYNC_RATES,
   },
   techHoverboard: {
     key: 'techHoverboard',
@@ -74,6 +90,7 @@ export const MOUNTS: Record<MountKey, MountSpec> = {
     bgColor: '#DB25FF',
     cols: 9,
     lineBonusTiers: TECH_HOVERBOARD_TIERS,
+    syncRates: TECH_HOVERBOARD_SYNC_RATES,
   },
   doomsteed: {
     key: 'doomsteed',
@@ -82,7 +99,13 @@ export const MOUNTS: Record<MountKey, MountSpec> = {
     bgColor: '#FE4C6A',
     cols: 12,
     lineBonusTiers: DOOMSTEED_TIERS,
+    syncRates: DOOMSTEED_SYNC_RATES,
   },
+}
+
+/** Sync-rate percentage for a mount at the given level. */
+export function syncRateFor(key: MountKey, level: MountLevel): number {
+  return MOUNTS[key].syncRates[level]
 }
 
 export function isMountKey(value: unknown): value is MountKey {

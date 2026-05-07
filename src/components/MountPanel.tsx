@@ -1,16 +1,16 @@
 import {
   MAX_MOUNT_LEVEL,
-  maxBonusLinesForLevel,
-  type LineBonusTier,
   type MountLevel,
 } from '../data/lineBonuses'
-import { MOUNT_KEYS, MOUNTS, type MountKey } from '../data/mounts'
+import { MOUNT_KEYS, MOUNTS, syncRateFor, type MountKey } from '../data/mounts'
 import { PanelShell } from './PanelShell'
 
 interface Props {
   selectedMount: MountKey
+  unlocked: Record<MountKey, boolean>
   levels: Record<MountKey, MountLevel>
   onSelectMount: (key: MountKey) => void
+  onUnlockedChange: (key: MountKey, unlocked: boolean) => void
   onLevelChange: (key: MountKey, level: MountLevel) => void
 }
 
@@ -105,39 +105,32 @@ function MountIcon({
   )
 }
 
-function nextUnlockHint(level: MountLevel, tiers: LineBonusTier[]): string {
-  let next: { minLines: number; unlockedAt: MountLevel } | null = null
-  for (const tier of tiers) {
-    if (tier.unlockedAtLevel > level) {
-      if (next == null || tier.unlockedAtLevel < next.unlockedAt) {
-        next = { minLines: tier.minLines, unlockedAt: tier.unlockedAtLevel }
-      }
-    }
-  }
-  if (!next) {
-    const cap = maxBonusLinesForLevel(level, tiers)
-    return cap > 0
-      ? 'Max level — all line bonuses unlocked.'
-      : 'No bonuses unlocked yet.'
-  }
-  const needed = next.unlockedAt - level
-  return `${needed} more star${needed === 1 ? '' : 's'} unlocks the ${next.minLines}-line bonus.`
-}
-
 export function MountPanel({
   selectedMount,
+  unlocked,
   levels,
   onSelectMount,
+  onUnlockedChange,
   onLevelChange,
 }: Props) {
+  const unlockedCount = MOUNT_KEYS.reduce(
+    (n, key) => (unlocked[key] ? n + 1 : n),
+    0,
+  )
+
   return (
     <PanelShell title="Mount">
       <div className="flex flex-col gap-3 mt-1">
         <div className="grid grid-cols-3 gap-3">
           {MOUNT_KEYS.map((key) => {
             const mount = MOUNTS[key]
+            const isUnlocked = unlocked[key]
             const isSelected = key === selectedMount
             const level = levels[key]
+            const syncRate = syncRateFor(key, level)
+            // Don't allow locking the last unlocked mount; selected mount can
+            // be locked too — App auto-switches selection to another unlocked.
+            const lockToggleDisabled = isUnlocked && unlockedCount <= 1
             return (
               <div
                 key={key}
@@ -153,31 +146,64 @@ export function MountPanel({
                 </div>
                 <button
                   type="button"
-                  onClick={() => onSelectMount(key)}
+                  onClick={() => isUnlocked && onSelectMount(key)}
+                  disabled={!isUnlocked}
                   aria-pressed={isSelected}
-                  aria-label={`Select ${mount.name}`}
-                  className="rounded-md focus:outline-none focus:ring-2 focus:ring-accent transition"
+                  aria-label={
+                    isUnlocked
+                      ? `Select ${mount.name}`
+                      : `${mount.name} (locked)`
+                  }
+                  title={isUnlocked ? undefined : 'Locked — unlock to equip'}
+                  className="rounded-md focus:outline-none focus:ring-2 focus:ring-accent transition disabled:cursor-not-allowed"
                   style={{
-                    filter: isSelected ? undefined : 'grayscale(0.6)',
-                    opacity: isSelected ? 1 : 0.85,
+                    filter: !isUnlocked
+                      ? 'grayscale(1)'
+                      : isSelected
+                        ? undefined
+                        : 'grayscale(0.6)',
+                    opacity: !isUnlocked ? 0.45 : isSelected ? 1 : 0.85,
                   }}
                 >
                   <MountIcon bgColor={mount.bgColor} iconUrl={mount.iconUrl} />
                 </button>
+                <button
+                  type="button"
+                  onClick={() => onUnlockedChange(key, !isUnlocked)}
+                  disabled={lockToggleDisabled}
+                  aria-pressed={isUnlocked}
+                  className={`text-[11px] px-2 py-0.5 rounded-full border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                    isUnlocked
+                      ? 'border-accent/60 text-accent bg-accent/10 hover:bg-accent/20'
+                      : 'border-bg-line text-gray-400 hover:text-gray-200 hover:border-gray-500'
+                  }`}
+                  title={
+                    lockToggleDisabled
+                      ? 'At least one mount must remain unlocked'
+                      : isUnlocked
+                        ? 'Lock this mount'
+                        : 'Unlock this mount'
+                  }
+                >
+                  {isUnlocked ? 'Unlocked' : 'Locked'}
+                </button>
                 <StarSelector
                   level={level}
+                  disabled={!isUnlocked}
                   onChange={(lv) => onLevelChange(key, lv)}
                 />
+                {isUnlocked && (
+                  <div className="text-[11px] text-gray-400 text-center">
+                    Sync rate{' '}
+                    <span className="text-gray-200 font-medium">
+                      {syncRate}%
+                    </span>
+                  </div>
+                )}
               </div>
             )
           })}
         </div>
-        <p className="text-xs text-gray-400 text-center">
-          {nextUnlockHint(
-            levels[selectedMount],
-            MOUNTS[selectedMount].lineBonusTiers,
-          )}
-        </p>
       </div>
     </PanelShell>
   )
@@ -185,12 +211,15 @@ export function MountPanel({
 
 function StarSelector({
   level,
+  disabled,
   onChange,
 }: {
   level: MountLevel
+  disabled?: boolean
   onChange: (next: MountLevel) => void
 }) {
   const handleClick = (clickedLevel: MountLevel) => {
+    if (disabled) return
     const next: MountLevel =
       clickedLevel === level
         ? ((clickedLevel - 1) as MountLevel)
@@ -207,9 +236,10 @@ function StarSelector({
             key={slot.level}
             type="button"
             onClick={() => handleClick(slot.level)}
+            disabled={disabled}
             aria-pressed={filled}
             aria-label={`Set mount level to ${slot.level}`}
-            className="rounded p-0.5 transition hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-accent"
+            className="rounded p-0.5 transition hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
           >
             <StarIcon filled={filled} color={color} size={18} />
           </button>

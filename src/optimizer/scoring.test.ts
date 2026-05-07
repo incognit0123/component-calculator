@@ -214,4 +214,31 @@ describe('scoreLayout', () => {
     const score = scoreLayout(current, [piece], 0, ES_TIERS, 0)
     expect(score).toBeCloseTo(1 + buff / 100, 10)
   })
+
+  it('pieceBuffMultiplier scales every piece buff before applying', () => {
+    const piece: Piece = {
+      id: 'p1',
+      shape: 'O',
+      quality: 'legend',
+      stat: 'critDamage',
+    }
+    const buff = BUFF_TABLE.legend.critDamage
+    const full = scoreLayout(zeroStats(), [piece], 0, ES_TIERS, 0, 1)
+    const half = scoreLayout(zeroStats(), [piece], 0, ES_TIERS, 0, 0.5)
+    expect(full).toBeCloseTo(1 + buff / 100, 10)
+    expect(half).toBeCloseTo(1 + (buff * 0.5) / 100, 10)
+  })
+
+  it('pieceBuffMultiplier of 0 returns the line-bonus-only baseline', () => {
+    const piece: Piece = {
+      id: 'p1',
+      shape: 'O',
+      quality: 'legend',
+      stat: 'critDamage',
+    }
+    const score = scoreLayout(zeroStats(), [piece], 4, ES_TIERS, 0, 0)
+    const baseline = zeroStats()
+    applyLineBonuses(baseline, 4, ES_TIERS, 0)
+    expect(score).toBeCloseTo(formula(baseline), 10)
+  })
 })

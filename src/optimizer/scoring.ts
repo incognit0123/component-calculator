@@ -48,9 +48,18 @@ export function cloneStats(s: StatTotals): StatTotals {
   return { ...s }
 }
 
-export function addPieceBuffs(stats: StatTotals, pieces: Piece[]): void {
+/**
+ * Add piece buffs to `stats`. `multiplier` (default 1) scales each piece's
+ * buff value before adding — used to model non-equipped mounts' sync rates,
+ * where pieces only contribute a fraction of their full buff to the player.
+ */
+export function addPieceBuffs(
+  stats: StatTotals,
+  pieces: Piece[],
+  multiplier = 1,
+): void {
   for (const p of pieces) {
-    stats[p.stat] += BUFF_TABLE[p.quality][p.stat]
+    stats[p.stat] += BUFF_TABLE[p.quality][p.stat] * multiplier
   }
 }
 
@@ -61,9 +70,10 @@ export function scoreLayout(
   lines: number,
   tiers: LineBonusTier[],
   mountLevel: MountLevel,
+  pieceBuffMultiplier = 1,
 ): number {
   const stats = cloneStats(currentStats)
-  addPieceBuffs(stats, placedPieces)
+  addPieceBuffs(stats, placedPieces, pieceBuffMultiplier)
   applyLineBonuses(stats, lines, tiers, mountLevel)
   return formula(stats)
 }
@@ -83,13 +93,14 @@ export function finalizeStats(
   lines: number,
   tiers: LineBonusTier[],
   mountLevel: MountLevel,
+  pieceBuffMultiplier = 1,
 ): {
   final: StatTotals
   buffsFromPieces: StatTotals
   buffsFromLines: StatTotals
 } {
   const afterPieces = cloneStats(currentStats)
-  addPieceBuffs(afterPieces, placedPieces)
+  addPieceBuffs(afterPieces, placedPieces, pieceBuffMultiplier)
 
   const final = cloneStats(afterPieces)
   applyLineBonuses(final, lines, tiers, mountLevel)

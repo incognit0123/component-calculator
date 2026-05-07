@@ -54,6 +54,7 @@ export function selectPieces(
   currentStats: StatTotals,
   tiers: LineBonusTier[],
   mountLevel: MountLevel,
+  pieceBuffMultiplier = 1,
 ): SelectionResult {
   const baseStats = cloneStats(currentStats)
   applyLineBonuses(baseStats, lineCount, tiers, mountLevel)
@@ -68,7 +69,7 @@ export function selectPieces(
         shape: p.shape,
         stat: p.stat,
         quality: p.quality,
-        buff: BUFF_TABLE[p.quality][p.stat],
+        buff: BUFF_TABLE[p.quality][p.stat] * pieceBuffMultiplier,
         pieces: [],
       }
       groups.set(key, g)

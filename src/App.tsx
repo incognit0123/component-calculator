@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CurrentStatsPanel } from './components/CurrentStatsPanel'
 import { PieceInventory } from './components/PieceInventory'
 import { MountPanel } from './components/MountPanel'
 import { OptimizerPanel } from './components/OptimizerPanel'
-import type { FullTimeLimit } from './components/OptimizerPanel'
+import type { FullTimeLimit, OptimizeScope } from './components/OptimizerPanel'
 import { BoardView } from './components/BoardView'
-import { StatsSummary } from './components/StatsSummary'
+import { MountBoardPreview } from './components/MountBoardPreview'
+import { StatsSummary, type StatsTab } from './components/StatsSummary'
 import { PieceCard } from './components/PieceCard'
 import { PanelShell } from './components/PanelShell'
 import {
@@ -21,14 +22,13 @@ import {
   type MountKey,
 } from './data/mounts'
 import { QUALITIES } from './data/qualities'
-import { SHAPE_KEYS, SHAPE_ROTATIONS, shapeBounds } from './data/shapes'
+import { SHAPE_KEYS } from './data/shapes'
 import { STAT_KEYS, zeroStats } from './data/stats'
 import type { OptimizerMode, Piece, StatTotals } from './data/types'
 import { usePersistedState } from './hooks/usePersistedState'
 import { useOptimizer } from './hooks/useOptimizer'
-import { countFullRows } from './optimizer/board'
-import { finalizeStats, formula } from './optimizer/scoring'
-import type { Placement } from './optimizer/types'
+import { formula } from './optimizer/scoring'
+import type { BoardResult, MountConfig } from './optimizer/types'
 
 const STATS_KEY = 'mount-opt:current-stats:v1'
 const PIECES_KEY = 'mount-opt:pieces:v1'
@@ -36,14 +36,18 @@ const MODE_KEY = 'mount-opt:mode:v1'
 const LEGACY_MOUNT_LEVEL_KEY = 'mount-opt:mount-level:v1'
 const MOUNT_LEVELS_KEY = 'mount-opt:mount-levels:v1'
 const SELECTED_MOUNT_KEY = 'mount-opt:selected-mount:v1'
+const UNLOCKED_MOUNTS_KEY = 'mount-opt:unlocked-mounts:v1'
+const OPTIMIZE_SCOPE_KEY = 'mount-opt:optimize-scope:v1'
 const FULL_LIMIT_KEY = 'mount-opt:full-time-limit:v1'
 const PROFILES_KEY = 'mount-opt:profiles:v1'
 const EXPORT_PREFIX_V1 = 'mount-opt:v1:'
 const EXPORT_PREFIX_V2 = 'mount-opt:v2:'
 const EXPORT_PREFIX_V3 = 'mount-opt:v3:'
 const EXPORT_PREFIX_V4 = 'mount-opt:v4:'
+const EXPORT_PREFIX_V5 = 'mount-opt:v5:'
 
 type MountLevelMap = Record<MountKey, MountLevel>
+type UnlockedMap = Record<MountKey, boolean>
 
 interface ExportedConfig {
   currentStats: StatTotals
@@ -51,19 +55,30 @@ interface ExportedConfig {
   mode: OptimizerMode
   selectedMountKey: MountKey
   mountLevels: MountLevelMap
+  unlockedMounts: UnlockedMap
+  optimizeScope: OptimizeScope
   fullTimeLimit: FullTimeLimit
 }
 
 type CompactMode = 'n' | 'f'
+type CompactScope = 'a' | 'e'
 type CompactPiece = [shape: Piece['shape'], quality: Piece['quality'], stat: Piece['stat']]
+type CompactZeroOne = 0 | 1
+type CompactUnlocked = {
+  electricScooter: CompactZeroOne
+  techHoverboard: CompactZeroOne
+  doomsteed: CompactZeroOne
+}
 
-interface ExportedConfigV4 {
-  version: 4
+interface ExportedConfigV5 {
+  version: 5
   s: number[]
   p: CompactPiece[]
   m: CompactMode
   mt: MountKey
   lv: { electricScooter: number; techHoverboard: number; doomsteed: number }
+  u: CompactUnlocked
+  os: CompactScope
   t: [enabled: 0 | 1, seconds: number]
 }
 
@@ -88,8 +103,8 @@ function base64ToBytes(base64: string): Uint8Array {
 }
 
 function encodeConfig(config: ExportedConfig): string {
-  const compact: ExportedConfigV4 = {
-    version: 4,
+  const compact: ExportedConfigV5 = {
+    version: 5,
     s: STAT_KEYS.map((key) => config.currentStats[key]),
     p: config.pieces.map((piece) => [piece.shape, piece.quality, piece.stat]),
     m: config.mode === 'normal' ? 'n' : 'f',
@@ -99,11 +114,17 @@ function encodeConfig(config: ExportedConfig): string {
       techHoverboard: config.mountLevels.techHoverboard,
       doomsteed: config.mountLevels.doomsteed,
     },
+    u: {
+      electricScooter: config.unlockedMounts.electricScooter ? 1 : 0,
+      techHoverboard: config.unlockedMounts.techHoverboard ? 1 : 0,
+      doomsteed: config.unlockedMounts.doomsteed ? 1 : 0,
+    },
+    os: config.optimizeScope === 'allUnlocked' ? 'a' : 'e',
     t: [config.fullTimeLimit.enabled ? 1 : 0, config.fullTimeLimit.seconds],
   }
   const json = JSON.stringify(compact)
   const base64 = bytesToBase64(new TextEncoder().encode(json))
-  return `${EXPORT_PREFIX_V4}${base64}`
+  return `${EXPORT_PREFIX_V5}${base64}`
 }
 
 function isMountLevel(value: unknown): value is MountLevel {
@@ -119,6 +140,16 @@ function isMountLevelMap(value: unknown): value is MountLevelMap {
   if (typeof value !== 'object' || value == null) return false
   const record = value as Record<string, unknown>
   return MOUNT_KEYS.every((key) => isMountLevel(record[key]))
+}
+
+function isUnlockedMap(value: unknown): value is UnlockedMap {
+  if (typeof value !== 'object' || value == null) return false
+  const record = value as Record<string, unknown>
+  return MOUNT_KEYS.every((key) => typeof record[key] === 'boolean')
+}
+
+function isOptimizeScope(value: unknown): value is OptimizeScope {
+  return value === 'allUnlocked' || value === 'equippedOnly'
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -157,6 +188,20 @@ function defaultMountLevels(): MountLevelMap {
 }
 
 /**
+ * Default unlocked map: only the given mount key unlocked. Used as the
+ * fall-back for users with no `unlocked-mounts:v1` key yet (and for older
+ * import versions) so the existing single-mount UI stays identical until
+ * the user explicitly unlocks more.
+ */
+function defaultUnlockedFor(key: MountKey): UnlockedMap {
+  return {
+    electricScooter: key === 'electricScooter',
+    techHoverboard: key === 'techHoverboard',
+    doomsteed: key === 'doomsteed',
+  }
+}
+
+/**
  * Seed the per-mount levels from the legacy single-mount-level localStorage
  * key (used pre v4). Called once at module init; if the v4 key already exists,
  * usePersistedState will overwrite this with the saved value.
@@ -173,6 +218,24 @@ function legacySeededMountLevels(): MountLevelMap {
     // ignore
   }
   return out
+}
+
+/**
+ * Default unlocked-mounts map: read the previously-selected mount key from
+ * localStorage and unlock only that one. Existing single-mount users see no
+ * UI change until they explicitly unlock another.
+ */
+function legacySeededUnlocked(): UnlockedMap {
+  if (typeof window === 'undefined') return defaultUnlockedFor(DEFAULT_MOUNT_KEY)
+  try {
+    const raw = window.localStorage.getItem(SELECTED_MOUNT_KEY)
+    if (raw == null) return defaultUnlockedFor(DEFAULT_MOUNT_KEY)
+    const parsed = JSON.parse(raw)
+    if (isMountKey(parsed)) return defaultUnlockedFor(parsed)
+  } catch {
+    // ignore
+  }
+  return defaultUnlockedFor(DEFAULT_MOUNT_KEY)
 }
 
 function decodeCompactPayload(
@@ -233,6 +296,8 @@ function decodeCompactPayload(
     mode: parsed.m === 'n' ? 'normal' : 'full',
     selectedMountKey: DEFAULT_MOUNT_KEY,
     mountLevels: { ...defaultMountLevels(), electricScooter: legacyMountLevel },
+    unlockedMounts: defaultUnlockedFor(DEFAULT_MOUNT_KEY),
+    optimizeScope: 'allUnlocked',
     fullTimeLimit: {
       enabled: enabledFlag === 1,
       seconds,
@@ -283,17 +348,100 @@ function decodeV4Payload(parsed: Record<string, unknown>): ExportedConfig {
     stat,
   }))
 
+  const selectedMountKey = parsed.mt as MountKey
+
   return {
     currentStats,
     pieces,
     mode: parsed.m === 'n' ? 'normal' : 'full',
-    selectedMountKey: parsed.mt as MountKey,
+    selectedMountKey,
     mountLevels: parsed.lv as MountLevelMap,
+    unlockedMounts: defaultUnlockedFor(selectedMountKey),
+    optimizeScope: 'allUnlocked',
+    fullTimeLimit: { enabled: enabledFlag === 1, seconds },
+  }
+}
+
+function decodeV5Payload(parsed: Record<string, unknown>): ExportedConfig {
+  const u = parsed.u as Record<string, unknown> | undefined
+  const validUnlocked =
+    u != null &&
+    typeof u === 'object' &&
+    MOUNT_KEYS.every((key) => u[key] === 0 || u[key] === 1)
+  const validBaseShape =
+    parsed.version === 5 &&
+    Array.isArray(parsed.s) &&
+    parsed.s.length === STAT_KEYS.length &&
+    parsed.s.every((value) => isFiniteNumber(value)) &&
+    Array.isArray(parsed.p) &&
+    parsed.p.every((piece) => {
+      if (!Array.isArray(piece) || piece.length !== 3) return false
+      const [shape, quality, stat] = piece
+      return (
+        SHAPE_KEYS.includes(shape as (typeof SHAPE_KEYS)[number]) &&
+        QUALITIES.some((q) => q.key === quality) &&
+        STAT_KEYS.includes(stat as (typeof STAT_KEYS)[number])
+      )
+    }) &&
+    (parsed.m === 'n' || parsed.m === 'f') &&
+    isMountKey(parsed.mt) &&
+    isMountLevelMap(parsed.lv) &&
+    validUnlocked &&
+    (parsed.os === 'a' || parsed.os === 'e') &&
+    Array.isArray(parsed.t) &&
+    parsed.t.length === 2 &&
+    (parsed.t[0] === 0 || parsed.t[0] === 1) &&
+    isFiniteNumber(parsed.t[1]) &&
+    parsed.t[1] >= 1
+
+  if (!validBaseShape) throw new Error('Import string data is invalid.')
+
+  const statValues = parsed.s as number[]
+  const compactPieces = parsed.p as CompactPiece[]
+  const [enabledFlag, seconds] = parsed.t as [0 | 1, number]
+
+  const currentStats = STAT_KEYS.reduce<StatTotals>((acc, key, index) => {
+    acc[key] = statValues[index]
+    return acc
+  }, zeroStats())
+
+  const pieces: Piece[] = compactPieces.map(([shape, quality, stat]) => ({
+    id: crypto.randomUUID(),
+    shape,
+    quality,
+    stat,
+  }))
+
+  const selectedMountKey = parsed.mt as MountKey
+  const unlockedMounts: UnlockedMap = {
+    electricScooter: u!.electricScooter === 1,
+    techHoverboard: u!.techHoverboard === 1,
+    doomsteed: u!.doomsteed === 1,
+  }
+  // Force-unlock the equipped mount: a hand-edited import string could be
+  // inconsistent, but the equipped mount must always be unlocked.
+  unlockedMounts[selectedMountKey] = true
+
+  return {
+    currentStats,
+    pieces,
+    mode: parsed.m === 'n' ? 'normal' : 'full',
+    selectedMountKey,
+    mountLevels: parsed.lv as MountLevelMap,
+    unlockedMounts,
+    optimizeScope: parsed.os === 'a' ? 'allUnlocked' : 'equippedOnly',
     fullTimeLimit: { enabled: enabledFlag === 1, seconds },
   }
 }
 
 function decodeConfig(raw: string): ExportedConfig {
+  if (raw.startsWith(EXPORT_PREFIX_V5)) {
+    const payload = raw.slice(EXPORT_PREFIX_V5.length).trim()
+    const json = new TextDecoder().decode(base64ToBytes(payload))
+    const parsed = JSON.parse(json) as Record<string, unknown>
+    return decodeV5Payload(parsed)
+  }
+
   if (raw.startsWith(EXPORT_PREFIX_V4)) {
     const payload = raw.slice(EXPORT_PREFIX_V4.length).trim()
     const json = new TextDecoder().decode(base64ToBytes(payload))
@@ -337,6 +485,8 @@ function decodeConfig(raw: string): ExportedConfig {
       mode: parsed.mode,
       selectedMountKey: DEFAULT_MOUNT_KEY,
       mountLevels: defaultMountLevels(),
+      unlockedMounts: defaultUnlockedFor(DEFAULT_MOUNT_KEY),
+      optimizeScope: 'allUnlocked',
       fullTimeLimit: parsed.fullTimeLimit,
     }
   }
@@ -345,12 +495,29 @@ function decodeConfig(raw: string): ExportedConfig {
 }
 
 /**
- * Width of a placement in cells = bounding-box col-extent of the rotated
- * shape. Used to decide whether a placement fits inside a board narrower
- * than the one it was generated for.
+ * Aggregate the per-mount piece-buff contributions in result.boards into a
+ * single sync-rate-scaled total — the "+ Pieces" column in the All-mounts
+ * view.
  */
-function placementWidth(shape: Piece['shape'], rotation: number): number {
-  return shapeBounds(SHAPE_ROTATIONS[shape][rotation]).cols
+function aggregatePieceBuffs(boards: BoardResult[]): StatTotals {
+  const out = zeroStats()
+  for (const board of boards) {
+    const mult = board.syncRate / 100
+    for (const k of STAT_KEYS) {
+      out[k] += board.buffsFromPieces[k] * mult
+    }
+  }
+  return out
+}
+
+/** Per-stat values = pieces × syncRate, used in non-equipped per-mount tabs. */
+function scaledForBoard(board: BoardResult): StatTotals {
+  const out = zeroStats()
+  const mult = board.syncRate / 100
+  for (const k of STAT_KEYS) {
+    out[k] = board.buffsFromPieces[k] * mult
+  }
+  return out
 }
 
 export default function App() {
@@ -374,6 +541,16 @@ export default function App() {
     legacySeededMountLevels(),
     isMountLevelMap,
   )
+  const [unlockedMounts, setUnlockedMounts] = usePersistedState<UnlockedMap>(
+    UNLOCKED_MOUNTS_KEY,
+    legacySeededUnlocked(),
+    isUnlockedMap,
+  )
+  const [optimizeScope, setOptimizeScope] = usePersistedState<OptimizeScope>(
+    OPTIMIZE_SCOPE_KEY,
+    'allUnlocked',
+    isOptimizeScope,
+  )
   const [fullTimeLimit, setFullTimeLimit] = usePersistedState<FullTimeLimit>(
     FULL_LIMIT_KEY,
     { enabled: false, seconds: 30 },
@@ -394,11 +571,52 @@ export default function App() {
   const [importError, setImportError] = useState<string | null>(null)
   const [exportCopyStatus, setExportCopyStatus] = useState<string | null>(null)
 
+  // Active board in the result section. Resets to the result's equipped mount
+  // whenever a new result arrives. Distinct from the Mount Panel's
+  // selectedMountKey — switching the displayed result board doesn't change
+  // what the player has equipped in their game.
+  const [displayedMountKey, setDisplayedMountKey] = useState<MountKey | null>(
+    null,
+  )
+  const [activeStatsTab, setActiveStatsTab] = useState<string>('all')
+
+  const result = status.result ?? status.progress?.partial ?? null
+
+  // When a fresh result lands, default the displayed board and stats tab.
+  useEffect(() => {
+    if (!result) return
+    setDisplayedMountKey((prev) => {
+      if (prev && result.boards.some((b) => b.mountKey === prev)) return prev
+      return result.equippedMountKey
+    })
+    setActiveStatsTab((prev) => {
+      if (prev === 'all' && result.boards.length > 1) return 'all'
+      if (result.boards.some((b) => b.mountKey === prev)) return prev
+      return result.boards.length > 1 ? 'all' : result.equippedMountKey
+    })
+  }, [result])
+
   const selectedMount = MOUNTS[selectedMountKey]
   const selectedMountLevel = mountLevels[selectedMountKey]
+  const unlockedKeys = MOUNT_KEYS.filter((k) => unlockedMounts[k])
+  const unlockedCount = unlockedKeys.length
 
   const handleMountLevelChange = (key: MountKey, level: MountLevel) => {
     setMountLevels((prev) => ({ ...prev, [key]: level }))
+  }
+
+  const handleUnlockedChange = (key: MountKey, unlocked: boolean) => {
+    setUnlockedMounts((prev) => {
+      const next = { ...prev, [key]: unlocked }
+      // If the selected (equipped) mount was just locked, auto-switch to the
+      // first remaining unlocked mount. We never lock the last unlocked one
+      // (MountPanel disables that), so there is always a fallback.
+      if (!unlocked && key === selectedMountKey) {
+        const fallback = MOUNT_KEYS.find((k) => k !== key && next[k])
+        if (fallback) setSelectedMountKey(fallback)
+      }
+      return next
+    })
   }
 
   const handleRun = () => {
@@ -406,77 +624,35 @@ export default function App() {
       mode === 'full' && fullTimeLimit.enabled
         ? fullTimeLimit.seconds * 1000
         : undefined
+
+    const includeNonEquipped =
+      optimizeScope === 'allUnlocked' && unlockedCount > 1
+    const mountConfigs: MountConfig[] = [
+      {
+        mountKey: selectedMountKey,
+        mountLevel: selectedMountLevel,
+        isEquipped: true,
+      },
+    ]
+    if (includeNonEquipped) {
+      for (const key of unlockedKeys) {
+        if (key === selectedMountKey) continue
+        mountConfigs.push({
+          mountKey: key,
+          mountLevel: mountLevels[key],
+          isEquipped: false,
+        })
+      }
+    }
+
     run({
       currentStats,
       pieces,
       mode,
-      mountKey: selectedMountKey,
-      mountLevel: selectedMountLevel,
+      mountConfigs,
       timeBudgetMs,
     })
   }
-
-  const result = status.result ?? status.progress?.partial ?? null
-
-  // Re-derive the displayed result against the *currently selected* mount.
-  // If the result's layout was generated for a wider board, pieces past the
-  // current mount's right edge are clipped into the unused list (and re-added
-  // automatically when the user switches back to a wide-enough mount, since
-  // we never mutate `result.placements`).
-  const displayedResult = useMemo(() => {
-    if (!result) return null
-    const cols = selectedMount.cols
-    const tiers = selectedMount.lineBonusTiers
-    const pieceById = new Map(pieces.map((p) => [p.id, p]))
-
-    const visiblePlacements: Placement[] = []
-    const droppedPieceIds: string[] = []
-    for (const pl of result.placements) {
-      const piece = pieceById.get(pl.pieceId)
-      if (!piece) continue
-      const w = placementWidth(piece.shape, pl.rotation)
-      if (pl.col + w <= cols) {
-        visiblePlacements.push(pl)
-      } else {
-        droppedPieceIds.push(pl.pieceId)
-      }
-    }
-
-    const visiblePieces = visiblePlacements
-      .map((pl) => pieceById.get(pl.pieceId))
-      .filter((p): p is Piece => p != null)
-
-    let occ = 0n
-    for (const pl of visiblePlacements) {
-      const piece = pieceById.get(pl.pieceId)
-      if (!piece) continue
-      for (const [dr, dc] of SHAPE_ROTATIONS[piece.shape][pl.rotation]) {
-        occ |= 1n << BigInt((pl.row + dr) * cols + (pl.col + dc))
-      }
-    }
-    const linesFilled = countFullRows(occ, cols)
-
-    const { final, buffsFromPieces, buffsFromLines } = finalizeStats(
-      currentStats,
-      visiblePieces,
-      linesFilled,
-      tiers,
-      selectedMountLevel,
-    )
-
-    return {
-      placements: visiblePlacements,
-      unusedPieceIds: [...result.unusedPieceIds, ...droppedPieceIds],
-      afterScore: formula(final),
-      beforeScore: formula(currentStats),
-      buffsFromPieces,
-      buffsFromLines,
-      linesFilled,
-      elapsedMs: result.elapsedMs,
-      mode: result.mode,
-      truncated: result.truncated,
-    }
-  }, [result, pieces, currentStats, selectedMount, selectedMountLevel])
 
   const currentScore = useMemo(() => formula(currentStats), [currentStats])
 
@@ -486,12 +662,82 @@ export default function App() {
     return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`
   }
 
-  const status_label =
-    status.running
-      ? `Running ${mode}…${status.progress ? ` (${status.progress.explored.toLocaleString()} explored)` : ''}`
-      : status.result
-        ? `${status.result.mode} · ${status.result.elapsedMs.toFixed(0)}ms${status.result.truncated ? ' · timed out' : ''}`
-        : undefined
+  const status_label = status.running
+    ? `Running ${mode}…${
+        status.progress
+          ? ` (${status.progress.explored.toLocaleString()} explored${
+              status.progress.currentMountKey
+                ? ` · ${MOUNTS[status.progress.currentMountKey].name}`
+                : ''
+            })`
+          : ''
+      }`
+    : status.result
+      ? `${status.result.mode} · ${status.result.elapsedMs.toFixed(0)}ms${
+          status.result.truncated ? ' · timed out' : ''
+        }`
+      : undefined
+
+  // Resolve the currently-displayed board.
+  const displayedBoard: BoardResult | null = useMemo(() => {
+    if (!result || !displayedMountKey) return null
+    return result.boards.find((b) => b.mountKey === displayedMountKey) ?? null
+  }, [result, displayedMountKey])
+
+  const displayedMount = displayedBoard ? MOUNTS[displayedBoard.mountKey] : null
+
+  // Stats-summary tab data for the active tab.
+  const statsViewProps = useMemo(() => {
+    if (!result) return null
+    const tabs: StatsTab[] = []
+    if (result.boards.length > 1) tabs.push({ id: 'all', label: 'All mounts' })
+    for (const b of result.boards) {
+      const m = MOUNTS[b.mountKey]
+      tabs.push({
+        id: b.mountKey,
+        label: b.isEquipped ? `${m.name} (equipped)` : m.name,
+      })
+    }
+
+    const tabId =
+      tabs.find((t) => t.id === activeStatsTab)?.id ??
+      (result.boards.length > 1 ? 'all' : result.equippedMountKey)
+
+    if (tabId === 'all') {
+      const equippedBoard = result.boards.find((b) => b.isEquipped)
+      return {
+        tabs,
+        activeTabId: tabId,
+        buffsFromPieces: aggregatePieceBuffs(result.boards),
+        secondaryValues: equippedBoard?.buffsFromLines ?? zeroStats(),
+        secondaryKind: 'lines' as const,
+        secondaryLabel: '+ Lines',
+        roundContributions: true,
+      }
+    }
+
+    const board = result.boards.find((b) => b.mountKey === tabId)!
+    if (board.isEquipped) {
+      return {
+        tabs,
+        activeTabId: tabId,
+        buffsFromPieces: board.buffsFromPieces,
+        secondaryValues: board.buffsFromLines,
+        secondaryKind: 'lines' as const,
+        secondaryLabel: '+ Lines',
+        roundContributions: false,
+      }
+    }
+    return {
+      tabs,
+      activeTabId: tabId,
+      buffsFromPieces: board.buffsFromPieces,
+      secondaryValues: scaledForBoard(board),
+      secondaryKind: 'syncRate' as const,
+      secondaryLabel: `(× ${board.syncRate}% sync rate)`,
+      roundContributions: true,
+    }
+  }, [result, activeStatsTab])
 
   const exportedString = useMemo(
     () =>
@@ -501,9 +747,20 @@ export default function App() {
         mode,
         selectedMountKey,
         mountLevels,
+        unlockedMounts,
+        optimizeScope,
         fullTimeLimit,
       }),
-    [currentStats, fullTimeLimit, mode, mountLevels, pieces, selectedMountKey],
+    [
+      currentStats,
+      fullTimeLimit,
+      mode,
+      mountLevels,
+      optimizeScope,
+      pieces,
+      selectedMountKey,
+      unlockedMounts,
+    ],
   )
 
   const handleOpenExport = () => {
@@ -520,15 +777,21 @@ export default function App() {
     }
   }
 
+  const applyConfig = (parsed: ExportedConfig) => {
+    setCurrentStats(parsed.currentStats)
+    setPieces(parsed.pieces)
+    setMode(parsed.mode)
+    setSelectedMountKey(parsed.selectedMountKey)
+    setMountLevels(parsed.mountLevels)
+    setUnlockedMounts(parsed.unlockedMounts)
+    setOptimizeScope(parsed.optimizeScope)
+    setFullTimeLimit(parsed.fullTimeLimit)
+  }
+
   const handleImport = () => {
     try {
       const parsed = decodeConfig(importText.trim())
-      setCurrentStats(parsed.currentStats)
-      setPieces(parsed.pieces)
-      setMode(parsed.mode)
-      setSelectedMountKey(parsed.selectedMountKey)
-      setMountLevels(parsed.mountLevels)
-      setFullTimeLimit(parsed.fullTimeLimit)
+      applyConfig(parsed)
       setImportError(null)
       setImportText('')
       setIsImportOpen(false)
@@ -541,12 +804,7 @@ export default function App() {
 
   const handleLoadConfig = (raw: string) => {
     const parsed = decodeConfig(raw)
-    setCurrentStats(parsed.currentStats)
-    setPieces(parsed.pieces)
-    setMode(parsed.mode)
-    setSelectedMountKey(parsed.selectedMountKey)
-    setMountLevels(parsed.mountLevels)
-    setFullTimeLimit(parsed.fullTimeLimit)
+    applyConfig(parsed)
   }
 
   const handleOpenSaveProfile = () => {
@@ -587,6 +845,8 @@ export default function App() {
   const handleDeleteProfile = (id: string) => {
     setProfiles((prev) => prev.filter((profile) => profile.id !== id))
   }
+
+  const showPreviews = result != null && result.boards.length > 1
 
   return (
     <div className="min-h-screen bg-bg flex">
@@ -719,13 +979,15 @@ export default function App() {
               pieces={pieces}
               onChange={setPieces}
               unusedIds={
-                new Set(displayedResult?.unusedPieceIds ?? [])
+                new Set(result?.unusedPieceIds ?? [])
               }
             />
             <MountPanel
               selectedMount={selectedMountKey}
+              unlocked={unlockedMounts}
               levels={mountLevels}
               onSelectMount={setSelectedMountKey}
+              onUnlockedChange={handleUnlockedChange}
               onLevelChange={handleMountLevelChange}
             />
           </div>
@@ -740,6 +1002,9 @@ export default function App() {
               onCancel={cancel}
               fullTimeLimit={fullTimeLimit}
               onFullTimeLimitChange={setFullTimeLimit}
+              multipleMountsUnlocked={unlockedCount > 1}
+              scope={optimizeScope}
+              onScopeChange={setOptimizeScope}
               exploredCount={status.progress?.explored}
               statusLabel={status_label}
               progressLabel={
@@ -751,52 +1016,95 @@ export default function App() {
               }
             />
 
-            {displayedResult ? (
+            {result && displayedBoard && displayedMount ? (
               <PanelShell title="Result" bodyClassName="flex flex-col gap-4">
                 <header className="flex items-center justify-between gap-4">
                   <div>
                     <h2 className="sr-only">Result</h2>
                     <div className="text-xs text-gray-400">
-                      {displayedResult.linesFilled} line{displayedResult.linesFilled === 1 ? '' : 's'} filled · {displayedResult.placements.length} piece{displayedResult.placements.length === 1 ? '' : 's'} placed
+                      {displayedBoard.linesFilled} line
+                      {displayedBoard.linesFilled === 1 ? '' : 's'} filled ·{' '}
+                      {displayedBoard.placements.length} piece
+                      {displayedBoard.placements.length === 1 ? '' : 's'} placed
                     </div>
                   </div>
                   <div className="text-right">
                     <div className="text-xs text-gray-400">Final score</div>
                     <div className="text-2xl font-bold text-white">
-                      {displayedResult.afterScore.toFixed(3)}×
+                      {result.afterScore.toFixed(3)}×
                     </div>
                     <div className="text-xs text-accent">
-                      {improvementPct(displayedResult.beforeScore, displayedResult.afterScore)} vs.
+                      {improvementPct(result.beforeScore, result.afterScore)} vs.
                       no mount
                     </div>
                   </div>
                 </header>
 
-                <div className="flex justify-center">
+                <div className="flex flex-col items-center gap-1">
+                  <div className="text-sm text-gray-200">
+                    {displayedMount.name}
+                    {displayedBoard.isEquipped && (
+                      <span className="text-gray-500 ml-1">(equipped)</span>
+                    )}
+                  </div>
                   <BoardView
                     pieces={pieces}
-                    placements={displayedResult.placements}
-                    cols={selectedMount.cols}
-                    maxHighlightedLines={maxBonusLinesForLevel(
-                      selectedMountLevel,
-                      selectedMount.lineBonusTiers,
-                    )}
+                    placements={displayedBoard.placements}
+                    cols={displayedMount.cols}
+                    maxHighlightedLines={
+                      displayedBoard.isEquipped
+                        ? maxBonusLinesForLevel(
+                            displayedBoard.mountLevel,
+                            displayedMount.lineBonusTiers,
+                          )
+                        : 0
+                    }
                   />
                 </div>
 
-                <StatsSummary
-                  currentStats={currentStats}
-                  buffsFromPieces={displayedResult.buffsFromPieces}
-                  buffsFromLines={displayedResult.buffsFromLines}
-                />
+                {showPreviews && (
+                  <div className="flex justify-center gap-3 flex-wrap">
+                    {result.boards.map((board) => {
+                      const m = MOUNTS[board.mountKey]
+                      const label = board.isEquipped
+                        ? `${m.name} (equipped)`
+                        : `${m.name} · ${board.syncRate}% sync`
+                      return (
+                        <MountBoardPreview
+                          key={board.mountKey}
+                          pieces={pieces}
+                          placements={board.placements}
+                          cols={m.cols}
+                          active={board.mountKey === displayedMountKey}
+                          onClick={() => setDisplayedMountKey(board.mountKey)}
+                          label={label}
+                        />
+                      )
+                    })}
+                  </div>
+                )}
 
-                {displayedResult.unusedPieceIds.length > 0 && (
+                {statsViewProps && (
+                  <StatsSummary
+                    currentStats={currentStats}
+                    buffsFromPieces={statsViewProps.buffsFromPieces}
+                    secondaryValues={statsViewProps.secondaryValues}
+                    secondaryKind={statsViewProps.secondaryKind}
+                    secondaryLabel={statsViewProps.secondaryLabel}
+                    roundContributions={statsViewProps.roundContributions}
+                    tabs={statsViewProps.tabs}
+                    activeTabId={statsViewProps.activeTabId}
+                    onTabChange={setActiveStatsTab}
+                  />
+                )}
+
+                {result.unusedPieceIds.length > 0 && (
                   <div>
                     <h3 className="text-sm font-semibold text-white mb-2">
-                      Unused pieces ({displayedResult.unusedPieceIds.length})
+                      Unused pieces ({result.unusedPieceIds.length})
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                      {displayedResult.unusedPieceIds.map((id) => {
+                      {result.unusedPieceIds.map((id) => {
                         const piece = pieces.find((p) => p.id === id)
                         if (!piece) return null
                         return <PieceCard key={id} piece={piece} dim />
@@ -806,8 +1114,8 @@ export default function App() {
                 )}
 
                 <div className="text-[11px] text-gray-500 text-right">
-                  {displayedResult.mode} mode · {displayedResult.elapsedMs.toFixed(0)}ms
-                  {displayedResult.truncated ? ' · timed out, best-so-far' : ''}
+                  {result.mode} mode · {result.elapsedMs.toFixed(0)}ms
+                  {result.truncated ? ' · timed out, best-so-far' : ''}
                 </div>
               </PanelShell>
             ) : (
@@ -851,7 +1159,7 @@ export default function App() {
 
             <p className="text-xs text-gray-400">
               Copy this string and share or save it for later import. New
-              exports use a compact v4 format; import accepts older v1/v2/v3
+              exports use a compact v5 format; import accepts older v1–v4
               exports too.
             </p>
 
@@ -921,7 +1229,7 @@ export default function App() {
                 setImportText(e.target.value)
               }}
               className="w-full h-36 bg-bg-elev border border-bg-line rounded-md p-3 text-xs text-white focus:outline-none focus:border-accent"
-              placeholder="mount-opt:v4:..."
+              placeholder="mount-opt:v5:..."
             />
 
             {importError && <p className="text-xs text-red-400">{importError}</p>}

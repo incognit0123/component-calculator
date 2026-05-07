@@ -7,6 +7,8 @@ export interface FullTimeLimit {
   seconds: number
 }
 
+export type OptimizeScope = 'allUnlocked' | 'equippedOnly'
+
 interface Props {
   mode: OptimizerMode
   onModeChange: (m: OptimizerMode) => void
@@ -16,6 +18,13 @@ interface Props {
   onCancel: () => void
   fullTimeLimit: FullTimeLimit
   onFullTimeLimitChange: (next: FullTimeLimit) => void
+  /**
+   * When the player has 2+ unlocked mounts, the panel surfaces a scope
+   * toggle. Hidden entirely when only 1 is unlocked (degenerate).
+   */
+  multipleMountsUnlocked: boolean
+  scope: OptimizeScope
+  onScopeChange: (next: OptimizeScope) => void
   exploredCount?: number
   progressLabel?: string
   statusLabel?: string
@@ -100,6 +109,9 @@ export function OptimizerPanel({
   onCancel,
   fullTimeLimit,
   onFullTimeLimitChange,
+  multipleMountsUnlocked,
+  scope,
+  onScopeChange,
   exploredCount,
   progressLabel,
   statusLabel,
@@ -163,6 +175,40 @@ export function OptimizerPanel({
           )}
         </div>
       </div>
+
+      {multipleMountsUnlocked && (
+        <div className="mt-3">
+          <div className="text-xs text-gray-400 mb-1.5">Optimize</div>
+          <div className="inline-flex rounded-full border border-bg-line bg-bg-elev p-0.5">
+            <button
+              type="button"
+              disabled={running}
+              onClick={() => onScopeChange('allUnlocked')}
+              aria-pressed={scope === 'allUnlocked'}
+              className={`text-xs px-3 py-1 rounded-full transition disabled:opacity-50 ${
+                scope === 'allUnlocked'
+                  ? 'bg-accent text-bg font-semibold'
+                  : 'text-gray-300 hover:text-white'
+              }`}
+            >
+              All unlocked mounts
+            </button>
+            <button
+              type="button"
+              disabled={running}
+              onClick={() => onScopeChange('equippedOnly')}
+              aria-pressed={scope === 'equippedOnly'}
+              className={`text-xs px-3 py-1 rounded-full transition disabled:opacity-50 ${
+                scope === 'equippedOnly'
+                  ? 'bg-accent text-bg font-semibold'
+                  : 'text-gray-300 hover:text-white'
+              }`}
+            >
+              Equipped only
+            </button>
+          </div>
+        </div>
+      )}
 
       {mode === 'full' && (
         <div className="mt-3 flex items-center gap-3 text-xs text-gray-300">

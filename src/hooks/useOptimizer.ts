@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { MountKey } from '../data/mounts'
 import type {
   OptimizerInput,
   OptimizerResult,
@@ -9,7 +10,11 @@ export interface OptimizerStatus {
   running: boolean
   result: OptimizerResult | null
   error: string | null
-  progress: { explored: number; partial: OptimizerResult } | null
+  progress: {
+    explored: number
+    partial: OptimizerResult
+    currentMountKey?: MountKey
+  } | null
 }
 
 export function useOptimizer() {
@@ -32,7 +37,11 @@ export function useOptimizer() {
       if (msg.type === 'progress') {
         setStatus((s) => ({
           ...s,
-          progress: { explored: msg.explored, partial: msg.best },
+          progress: {
+            explored: msg.explored,
+            partial: msg.best,
+            currentMountKey: msg.currentMountKey,
+          },
         }))
       } else if (msg.type === 'done') {
         setStatus({

@@ -1,10 +1,7 @@
 /// <reference lib="webworker" />
-import { solve } from './solve'
-import type {
-  OptimizerInput,
-  OptimizerResult,
-  WorkerMessage,
-} from './types'
+import type { MountKey } from '../data/mounts'
+import { solveAll } from './solveAll'
+import type { OptimizerInput, OptimizerResult, WorkerMessage } from './types'
 
 let cancelled = false
 
@@ -26,18 +23,30 @@ ctx.addEventListener(
     cancelled = false
     const input = data as OptimizerInput
     try {
-      const onProgress = (best: OptimizerResult, explored: number) => {
-        const msg: WorkerMessage = { type: 'progress', best, explored }
+      const onProgress = (
+        best: OptimizerResult,
+        explored: number,
+        currentMountKey: MountKey,
+      ) => {
+        const msg: WorkerMessage = {
+          type: 'progress',
+          best,
+          explored,
+          currentMountKey,
+        }
         ctx.postMessage(msg)
       }
-      const result = await solve(input.pieces, input.currentStats, {
-        mode: input.mode,
-        mountKey: input.mountKey,
-        mountLevel: input.mountLevel,
-        timeBudgetMs: input.timeBudgetMs,
-        isCancelled: () => cancelled,
-        onProgress,
-      })
+      const result = await solveAll(
+        input.pieces,
+        input.currentStats,
+        input.mountConfigs,
+        {
+          mode: input.mode,
+          timeBudgetMs: input.timeBudgetMs,
+          isCancelled: () => cancelled,
+          onProgress,
+        },
+      )
       const msg: WorkerMessage = { type: 'done', result }
       ctx.postMessage(msg)
     } catch (err) {
