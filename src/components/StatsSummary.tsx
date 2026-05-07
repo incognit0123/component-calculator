@@ -4,7 +4,8 @@ import { StatIcon } from './icons/StatIcon'
 
 interface Props {
   currentStats: StatTotals
-  buffsFromMount: StatTotals
+  buffsFromPieces: StatTotals
+  buffsFromLines: StatTotals
 }
 
 function fmt(n: number): string {
@@ -13,7 +14,11 @@ function fmt(n: number): string {
   return n.toFixed(1)
 }
 
-export function StatsSummary({ currentStats, buffsFromMount }: Props) {
+export function StatsSummary({
+  currentStats,
+  buffsFromPieces,
+  buffsFromLines,
+}: Props) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -21,15 +26,17 @@ export function StatsSummary({ currentStats, buffsFromMount }: Props) {
           <tr className="text-gray-400 text-xs">
             <th className="text-left px-2 py-1 font-normal">Stat</th>
             <th className="text-right px-2 py-1 font-normal">Before</th>
-            <th className="text-right px-2 py-1 font-normal">+ Mount</th>
+            <th className="text-right px-2 py-1 font-normal">+ Pieces</th>
+            <th className="text-right px-2 py-1 font-normal">+ Lines</th>
             <th className="text-right px-2 py-1 font-normal">After</th>
           </tr>
         </thead>
         <tbody>
           {STATS.map((s) => {
             const before = currentStats[s.key]
-            const buff = buffsFromMount[s.key]
-            const after = before + buff
+            const piece = buffsFromPieces[s.key]
+            const line = buffsFromLines[s.key]
+            const after = before + piece + line
             return (
               <tr key={s.key} className="border-t border-bg-line">
                 <td className="px-2 py-1.5">
@@ -42,7 +49,10 @@ export function StatsSummary({ currentStats, buffsFromMount }: Props) {
                   {fmt(before)}%
                 </td>
                 <td className="px-2 py-1.5 text-right text-accent">
-                  {buff > 0 ? `+${fmt(buff)}%` : '—'}
+                  {piece > 0 ? `+${fmt(piece)}%` : '—'}
+                </td>
+                <td className="px-2 py-1.5 text-right text-yellow-400">
+                  {line > 0 ? `+${fmt(line)}%` : '—'}
                 </td>
                 <td className="px-2 py-1.5 text-right text-white font-medium">
                   {fmt(after)}%

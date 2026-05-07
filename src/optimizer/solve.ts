@@ -370,7 +370,7 @@ function buildResult(
     ctx.tiers,
     ctx.mountLevel,
   )
-  const { buffs } = finalizeStats(
+  const { buffsFromPieces, buffsFromLines } = finalizeStats(
     ctx.currentStats,
     picks,
     lines,
@@ -386,7 +386,8 @@ function buildResult(
     unusedPieceIds,
     beforeScore,
     afterScore,
-    buffsFromMount: buffs,
+    buffsFromPieces,
+    buffsFromLines,
     linesFilled: lines,
     elapsedMs: 0,
     mode: ctx.mode,
@@ -402,7 +403,8 @@ function emptyResult(ctx: SolveContext): OptimizerResult {
     unusedPieceIds: ctx.inventory.map((p) => p.id),
     beforeScore: score,
     afterScore: score,
-    buffsFromMount: zeroStats(),
+    buffsFromPieces: zeroStats(),
+    buffsFromLines: zeroStats(),
     linesFilled: 0,
     elapsedMs: 0,
     mode: ctx.mode,

@@ -31,7 +31,8 @@ export interface OptimizerResult {
   unusedPieceIds: string[]
   beforeScore: number
   afterScore: number
-  buffsFromMount: StatTotals
+  buffsFromPieces: StatTotals
+  buffsFromLines: StatTotals
   linesFilled: number
   elapsedMs: number
   mode: OptimizerMode

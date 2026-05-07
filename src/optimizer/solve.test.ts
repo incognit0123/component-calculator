@@ -156,7 +156,7 @@ describe('solve', () => {
     })
     expect(lvl8.linesFilled).toBeGreaterThanOrEqual(0)
     if (lvl8.linesFilled >= 5) {
-      expect(lvl8.buffsFromMount.laceration).toBeGreaterThan(0)
+      expect(lvl8.buffsFromLines.laceration).toBeGreaterThan(0)
     }
   })
 
@@ -208,7 +208,7 @@ describe('solve', () => {
     })
 
     expect(result.linesFilled).toBe(8)
-    expect(result.buffsFromMount.toBosses).toBeGreaterThanOrEqual(10)
+    expect(result.buffsFromLines.toBosses).toBeGreaterThanOrEqual(10)
 
     // Cross-check: scoreLayout with the same inputs matches.
     const placedPieces = result.placements

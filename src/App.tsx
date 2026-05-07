@@ -456,7 +456,7 @@ export default function App() {
     }
     const linesFilled = countFullRows(occ, cols)
 
-    const { final, buffs } = finalizeStats(
+    const { final, buffsFromPieces, buffsFromLines } = finalizeStats(
       currentStats,
       visiblePieces,
       linesFilled,
@@ -469,7 +469,8 @@ export default function App() {
       unusedPieceIds: [...result.unusedPieceIds, ...droppedPieceIds],
       afterScore: formula(final),
       beforeScore: formula(currentStats),
-      buffsFromMount: buffs,
+      buffsFromPieces,
+      buffsFromLines,
       linesFilled,
       elapsedMs: result.elapsedMs,
       mode: result.mode,
@@ -785,7 +786,8 @@ export default function App() {
 
                 <StatsSummary
                   currentStats={currentStats}
-                  buffsFromMount={displayedResult.buffsFromMount}
+                  buffsFromPieces={displayedResult.buffsFromPieces}
+                  buffsFromLines={displayedResult.buffsFromLines}
                 />
 
                 {displayedResult.unusedPieceIds.length > 0 && (

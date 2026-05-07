@@ -69,7 +69,8 @@ export function scoreLayout(
 }
 
 /**
- * Produce the final stats and the full mount contribution (pieces + lines).
+ * Produce the final stats and the mount contribution split into the piece
+ * buffs and the line-clear bonuses.
  *
  * `compute` tiers depend on the running stat totals, so we accumulate piece
  * buffs into a running copy of `currentStats` first, then run the tiers
@@ -82,14 +83,22 @@ export function finalizeStats(
   lines: number,
   tiers: LineBonusTier[],
   mountLevel: MountLevel,
-): { final: StatTotals; buffs: StatTotals } {
-  const final = cloneStats(currentStats)
-  addPieceBuffs(final, placedPieces)
+): {
+  final: StatTotals
+  buffsFromPieces: StatTotals
+  buffsFromLines: StatTotals
+} {
+  const afterPieces = cloneStats(currentStats)
+  addPieceBuffs(afterPieces, placedPieces)
+
+  const final = cloneStats(afterPieces)
   applyLineBonuses(final, lines, tiers, mountLevel)
 
-  const buffs = zeroStats()
-  for (const k of Object.keys(buffs) as StatKey[]) {
-    buffs[k] = final[k] - currentStats[k]
+  const buffsFromPieces = zeroStats()
+  const buffsFromLines = zeroStats()
+  for (const k of Object.keys(buffsFromPieces) as StatKey[]) {
+    buffsFromPieces[k] = afterPieces[k] - currentStats[k]
+    buffsFromLines[k] = final[k] - afterPieces[k]
   }
-  return { final, buffs }
+  return { final, buffsFromPieces, buffsFromLines }
 }
