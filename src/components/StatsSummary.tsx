@@ -26,8 +26,10 @@ interface Props {
 
 function fmt(n: number, dp: number): string {
   if (!Number.isFinite(n)) return '0'
-  if (Number.isInteger(n) && dp <= 1) return n.toString()
-  return n.toFixed(dp)
+  // Round to dp decimals, then drop trailing zeros and any dangling dot.
+  const fixed = n.toFixed(dp)
+  if (!fixed.includes('.')) return fixed
+  return fixed.replace(/\.?0+$/, '')
 }
 
 export function StatsSummary({

@@ -1018,6 +1018,11 @@ export default function App() {
 
             {result && displayedBoard && displayedMount ? (
               <PanelShell title="Result" bodyClassName="flex flex-col gap-4">
+                {status.running && (
+                  <div className="text-xs text-accent italic">
+                    Preliminary result (still working)…
+                  </div>
+                )}
                 <header className="flex items-center justify-between gap-4">
                   <div>
                     <h2 className="sr-only">Result</h2>

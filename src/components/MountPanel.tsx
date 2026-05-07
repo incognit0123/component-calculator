@@ -64,6 +64,84 @@ function StarIcon({
   )
 }
 
+function PadlockIcon({
+  open,
+  size = 12,
+  color = 'currentColor',
+}: {
+  open: boolean
+  size?: number
+  color?: string
+}) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={2.4}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="5" y="11" width="14" height="10" rx="1.6" />
+      {open ? (
+        <path d="M8.5 11V7a3.5 3.5 0 0 1 6.2-2.2" />
+      ) : (
+        <path d="M8.5 11V7a3.5 3.5 0 1 1 7 0v4" />
+      )}
+    </svg>
+  )
+}
+
+function LockToggle({
+  unlocked,
+  disabled,
+  onChange,
+  mountName,
+}: {
+  unlocked: boolean
+  disabled?: boolean
+  onChange: () => void
+  mountName: string
+}) {
+  const title = disabled
+    ? 'At least one mount must remain unlocked'
+    : unlocked
+      ? `Lock ${mountName}`
+      : `Unlock ${mountName}`
+  return (
+    <button
+      type="button"
+      onClick={onChange}
+      disabled={disabled}
+      role="switch"
+      aria-checked={unlocked}
+      aria-label={title}
+      title={title}
+      className={`relative w-12 h-6 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-accent ${
+        unlocked ? 'bg-accent/50' : 'bg-bg-line'
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className="absolute inset-0 flex items-center justify-between px-1.5 pointer-events-none"
+      >
+        <PadlockIcon open={false} size={11} color="rgba(255,255,255,0.35)" />
+        <PadlockIcon open size={11} color="rgba(255,255,255,0.35)" />
+      </span>
+      <span
+        className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow flex items-center justify-center transition-transform ${
+          unlocked ? 'translate-x-6' : 'translate-x-0'
+        }`}
+      >
+        <PadlockIcon open={unlocked} size={12} color="#1f2937" />
+      </span>
+    </button>
+  )
+}
+
 function MountIcon({
   bgColor,
   iconUrl,
@@ -167,32 +245,18 @@ export function MountPanel({
                 >
                   <MountIcon bgColor={mount.bgColor} iconUrl={mount.iconUrl} />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => onUnlockedChange(key, !isUnlocked)}
+                <LockToggle
+                  unlocked={isUnlocked}
                   disabled={lockToggleDisabled}
-                  aria-pressed={isUnlocked}
-                  className={`text-[11px] px-2 py-0.5 rounded-full border transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                    isUnlocked
-                      ? 'border-accent/60 text-accent bg-accent/10 hover:bg-accent/20'
-                      : 'border-bg-line text-gray-400 hover:text-gray-200 hover:border-gray-500'
-                  }`}
-                  title={
-                    lockToggleDisabled
-                      ? 'At least one mount must remain unlocked'
-                      : isUnlocked
-                        ? 'Lock this mount'
-                        : 'Unlock this mount'
-                  }
-                >
-                  {isUnlocked ? 'Unlocked' : 'Locked'}
-                </button>
+                  onChange={() => onUnlockedChange(key, !isUnlocked)}
+                  mountName={mount.name}
+                />
                 <StarSelector
                   level={level}
                   disabled={!isUnlocked}
                   onChange={(lv) => onLevelChange(key, lv)}
                 />
-                {isUnlocked && (
+                {isUnlocked && !isSelected && (
                   <div className="text-[11px] text-gray-400 text-center">
                     Sync rate{' '}
                     <span className="text-gray-200 font-medium">
