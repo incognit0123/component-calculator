@@ -31,14 +31,14 @@ import {
   type SlotPlacement,
 } from './tiling'
 import { BOARD_ROWS } from './types'
-import type { OptimizerResult, Placement } from './types'
+import type { BoardSolveResult, Placement } from './types'
 
 export interface SolveOptions {
   mode?: OptimizerMode
   mountKey?: MountKey
   mountLevel?: MountLevel
   isCancelled?: () => boolean
-  onProgress?: (best: OptimizerResult, explored: number) => void
+  onProgress?: (best: BoardSolveResult, explored: number) => void
   /** Hard time cap (ms). On expiry returns best-so-far with truncated=true. */
   timeBudgetMs?: number
   /**
@@ -46,6 +46,18 @@ export interface SolveOptions {
    * a fractional improvement of at least this much over the current best.
    */
   normalToleranceEps?: number
+  /**
+   * Multiplier applied to every piece's buff value during optimization and
+   * scoring. Default 1 (full buffs, equipped mount). Pass syncRate/100 when
+   * solving a non-equipped mount's board so the search optimizes against the
+   * already-discounted contribution.
+   */
+  pieceBuffMultiplier?: number
+  /**
+   * When true, skip line-clear bonuses entirely regardless of `mountLevel`.
+   * Set this for non-equipped mounts (which don't grant line bonuses).
+   */
+  disableLineBonuses?: boolean
 }
 
 const DEFAULT_NORMAL_TOLERANCE = 0.005
@@ -80,15 +92,21 @@ export async function solve(
   inventory: Piece[],
   currentStats: StatTotals,
   opts: SolveOptions = {},
-): Promise<OptimizerResult> {
+): Promise<BoardSolveResult> {
   const started = performance.now()
   const mode: OptimizerMode = opts.mode ?? 'full'
   const mountKey: MountKey = opts.mountKey ?? DEFAULT_MOUNT_KEY
   const mount = MOUNTS[mountKey]
   const cols = mount.cols
-  const tiers = mount.lineBonusTiers
+  // Non-equipped mounts don't grant line bonuses — pass an empty tier list to
+  // every downstream consumer rather than threading a separate flag, so a
+  // single code path covers both regimes.
+  const tiers: LineBonusTier[] = opts.disableLineBonuses
+    ? []
+    : mount.lineBonusTiers
   const mountLevel: MountLevel = opts.mountLevel ?? 0
   const tolerance = opts.normalToleranceEps ?? DEFAULT_NORMAL_TOLERANCE
+  const pieceBuffMultiplier = opts.pieceBuffMultiplier ?? 1
   const deadline =
     opts.timeBudgetMs != null ? started + opts.timeBudgetMs : Infinity
 
@@ -103,6 +121,7 @@ export async function solve(
     cols,
     tiers,
     mountLevel,
+    pieceBuffMultiplier,
     maxBonusLines: maxBonusLinesForLevel(mountLevel, tiers),
     geometricMaxPieces,
     totalCells,
@@ -136,6 +155,7 @@ interface SolveContext {
   cols: number
   tiers: LineBonusTier[]
   mountLevel: MountLevel
+  pieceBuffMultiplier: number
   maxBonusLines: number
   geometricMaxPieces: number
   totalCells: number
@@ -143,7 +163,7 @@ interface SolveContext {
   deadline: number
   started: number
   isCancelled?: () => boolean
-  onProgress?: (best: OptimizerResult, explored: number) => void
+  onProgress?: (best: BoardSolveResult, explored: number) => void
   explored: number
   cancelled: boolean
   truncated: boolean
@@ -164,7 +184,7 @@ function groupPiecesByShape(pieces: Piece[]): Record<ShapeKey, Piece[]> {
  * mix can't be packed — adding any piece strictly improves score, so the
  * largest tileable subset always wins.
  */
-async function solveSmallInventory(ctx: SolveContext): Promise<OptimizerResult> {
+async function solveSmallInventory(ctx: SolveContext): Promise<BoardSolveResult> {
   const fullDist = inventoryShapeCounts(ctx.inventory)
   const target = effectiveLineTarget(
     totalShapeCells(fullDist),
@@ -181,7 +201,7 @@ async function solveSmallInventory(ctx: SolveContext): Promise<OptimizerResult> 
     )
   }
 
-  let best: OptimizerResult | null = null
+  let best: BoardSolveResult | null = null
   let bestScore = formula(ctx.currentStats)
   for (let i = 0; i < ctx.inventory.length; i++) {
     if (await maybeYield(ctx)) break
@@ -211,7 +231,7 @@ async function solveSmallInventory(ctx: SolveContext): Promise<OptimizerResult> 
 async function solveFullInventory(
   ctx: SolveContext,
   piecesByShape: Record<ShapeKey, Piece[]>,
-): Promise<OptimizerResult> {
+): Promise<BoardSolveResult> {
   const invCounts = inventoryShapeCounts(ctx.inventory)
   const distributions: ShapeCounts[] = []
   for (let off = 0; off <= NEAR_FULL_DEPTH; off++) {
@@ -233,11 +253,12 @@ async function solveFullInventory(
       ctx.mountLevel,
       ctx.maxBonusLines,
       ctx.cols,
+      ctx.pieceBuffMultiplier,
     ),
   }))
   ranked.sort((a, b) => b.upperBound - a.upperBound)
 
-  let best: OptimizerResult | null = null
+  let best: BoardSolveResult | null = null
   let bestScore = formula(ctx.currentStats)
 
   for (const { dist, upperBound: ub } of ranked) {
@@ -260,6 +281,7 @@ async function solveFullInventory(
       ctx.currentStats,
       ctx.tiers,
       ctx.mountLevel,
+      ctx.pieceBuffMultiplier,
     )
     ctx.explored++
 
@@ -286,6 +308,7 @@ function distributionUpperBound(
   mountLevel: MountLevel,
   maxBonusLines: number,
   cols: number,
+  pieceBuffMultiplier: number,
 ): number {
   const cellsToPlace = totalShapeCells(dist)
   const lines = effectiveLineTarget(cellsToPlace, maxBonusLines, cols)
@@ -301,7 +324,7 @@ function distributionUpperBound(
     const ratios: number[] = []
     for (const p of pool) {
       const s = cloneStats(stats)
-      s[p.stat] += BUFF_TABLE[p.quality][p.stat]
+      s[p.stat] += BUFF_TABLE[p.quality][p.stat] * pieceBuffMultiplier
       ratios.push(formula(s) / baseScore)
     }
     ratios.sort((a, b) => b - a)
@@ -360,7 +383,7 @@ function buildResult(
   picks: Piece[],
   slots: SlotPlacement[],
   lines: number,
-): OptimizerResult {
+): BoardSolveResult {
   const placements = assignPiecesToSlots(picks, slots)
   const beforeScore = formula(ctx.currentStats)
   const afterScore = scoreLayout(
@@ -369,6 +392,7 @@ function buildResult(
     lines,
     ctx.tiers,
     ctx.mountLevel,
+    ctx.pieceBuffMultiplier,
   )
   const { buffsFromPieces, buffsFromLines } = finalizeStats(
     ctx.currentStats,
@@ -376,6 +400,7 @@ function buildResult(
     lines,
     ctx.tiers,
     ctx.mountLevel,
+    ctx.pieceBuffMultiplier,
   )
   const placedIds = new Set(picks.map((p) => p.id))
   const unusedPieceIds = ctx.inventory
@@ -396,7 +421,7 @@ function buildResult(
   }
 }
 
-function emptyResult(ctx: SolveContext): OptimizerResult {
+function emptyResult(ctx: SolveContext): BoardSolveResult {
   const score = formula(ctx.currentStats)
   return {
     placements: [],
@@ -433,7 +458,7 @@ async function maybeYield(ctx: SolveContext): Promise<boolean> {
   return ctx.cancelled
 }
 
-function maybeProgress(ctx: SolveContext, best: OptimizerResult): void {
+function maybeProgress(ctx: SolveContext, best: BoardSolveResult): void {
   if (!ctx.onProgress) return
   const now = performance.now()
   if (now - ctx.lastProgress < PROGRESS_INTERVAL_MS) return
