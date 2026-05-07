@@ -22,7 +22,11 @@ export interface SolveAllOptions {
     explored: number,
     currentMountKey: MountKey,
   ) => void
-  /** Total time budget across **all** boards (not per-board). */
+  /**
+   * Per-board time budget. Each board's `solve()` gets this same budget
+   * fresh — if board 1 truncates, the leftover pieces are still optimized
+   * against board 2 with another full `timeBudgetMs`, and so on.
+   */
   timeBudgetMs?: number
   normalToleranceEps?: number
 }
@@ -53,8 +57,6 @@ export async function solveAll(
 ): Promise<OptimizerResult> {
   const started = performance.now()
   const mode = opts.mode ?? 'full'
-  const deadline =
-    opts.timeBudgetMs != null ? started + opts.timeBudgetMs : Infinity
 
   const equipped = mountConfigs.find((c) => c.isEquipped)
   if (!equipped) {
@@ -83,15 +85,10 @@ export async function solveAll(
     const isEquipped = config.isEquipped
     const multiplier = isEquipped ? 1 : syncRatePct / 100
 
-    if (opts.isCancelled?.() || performance.now() >= deadline) {
+    if (opts.isCancelled?.()) {
       truncated = true
       break
     }
-
-    const remainingTime =
-      deadline === Infinity
-        ? undefined
-        : Math.max(0, deadline - performance.now())
 
     // Forward solve's progress events as a partial OptimizerResult that
     // includes already-finished boards plus the current board's best-so-far.
@@ -124,7 +121,7 @@ export async function solveAll(
       mountLevel: config.mountLevel,
       pieceBuffMultiplier: multiplier,
       disableLineBonuses: !isEquipped,
-      timeBudgetMs: remainingTime,
+      timeBudgetMs: opts.timeBudgetMs,
       isCancelled: opts.isCancelled,
       onProgress: onBoardProgress,
       normalToleranceEps: opts.normalToleranceEps,

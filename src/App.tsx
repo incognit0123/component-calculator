@@ -1005,6 +1005,11 @@ export default function App() {
               multipleMountsUnlocked={unlockedCount > 1}
               scope={optimizeScope}
               onScopeChange={setOptimizeScope}
+              boardCount={
+                optimizeScope === 'allUnlocked' && unlockedCount > 1
+                  ? unlockedCount
+                  : 1
+              }
               exploredCount={status.progress?.explored}
               statusLabel={status_label}
               progressLabel={

@@ -25,6 +25,12 @@ interface Props {
   multipleMountsUnlocked: boolean
   scope: OptimizeScope
   onScopeChange: (next: OptimizeScope) => void
+  /**
+   * Number of boards a Run will optimize (1 if only the equipped mount is in
+   * scope, otherwise the count of unlocked mounts). Used to size the progress
+   * bar's worst-case duration since `fullTimeLimit` is applied per-board.
+   */
+  boardCount: number
   exploredCount?: number
   progressLabel?: string
   statusLabel?: string
@@ -112,13 +118,14 @@ export function OptimizerPanel({
   multipleMountsUnlocked,
   scope,
   onScopeChange,
+  boardCount,
   exploredCount,
   progressLabel,
   statusLabel,
 }: Props) {
   const totalMs =
     mode === 'full' && fullTimeLimit.enabled
-      ? fullTimeLimit.seconds * 1000
+      ? fullTimeLimit.seconds * 1000 * Math.max(1, boardCount)
       : undefined
 
   return (
@@ -239,7 +246,9 @@ export function OptimizerPanel({
             }}
             className="app-input w-20 px-2 py-1 text-xs focus:outline-none focus:border-accent disabled:opacity-50"
           />
-          <span className="text-gray-500">seconds</span>
+          <span className="text-gray-500">
+            seconds{boardCount > 1 && ' per board'}
+          </span>
           {!fullTimeLimit.enabled && (
             <span className="text-gray-500 italic">
               · unlimited (cancel to stop)

@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { syncRateFor } from '../data/mounts'
 import { zeroStats } from '../data/stats'
 import type { Piece } from '../data/types'
 import { formula } from './scoring'
+import * as solveModule from './solve'
 import { solveAll } from './solveAll'
 import type { MountConfig } from './types'
 
@@ -27,6 +28,9 @@ const equippedDoomsteed: MountConfig = {
 }
 
 describe('solveAll', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
   it('matches single-mount solve when only the equipped mount is provided', async () => {
     const inventory: Piece[] = [
       mk('O', 'legend', 'critDamage'),
@@ -150,6 +154,41 @@ describe('solveAll', () => {
     ])
     const ne = result.boards.find((b) => b.mountKey === 'doomsteed')!
     expect(ne.syncRate).toBe(syncRateFor('doomsteed', 4))
+  })
+
+  it('forwards timeBudgetMs to each board solve unchanged (per-board, not shared)', async () => {
+    // Spy on `solve` to capture the `timeBudgetMs` passed to each board.
+    // Under the old shared-deadline behavior, board 2 would be called with
+    // ~0 (or skipped entirely once the shared deadline expired). Under the
+    // new per-board behavior, every board sees the full budget.
+    const realSolve = solveModule.solve
+    const calls: { mountKey: string; timeBudgetMs: number | undefined }[] = []
+    vi.spyOn(solveModule, 'solve').mockImplementation((inv, stats, opts) => {
+      calls.push({
+        mountKey: opts?.mountKey ?? '?',
+        timeBudgetMs: opts?.timeBudgetMs,
+      })
+      return realSolve(inv, stats, opts)
+    })
+
+    const inventory: Piece[] = []
+    for (let i = 0; i < 24; i++) inventory.push(mk('O', 'legend', 'critDamage'))
+
+    await solveAll(
+      inventory,
+      zeroStats(),
+      [
+        equippedScooter,
+        { mountKey: 'techHoverboard', mountLevel: 0, isEquipped: false },
+      ],
+      { mode: 'normal', timeBudgetMs: 42 },
+    )
+
+    expect(calls.length).toBe(2)
+    expect(calls[0].mountKey).toBe('electricScooter')
+    expect(calls[0].timeBudgetMs).toBe(42)
+    expect(calls[1].mountKey).toBe('techHoverboard')
+    expect(calls[1].timeBudgetMs).toBe(42)
   })
 
   it('throws if no equipped mount is provided', async () => {
