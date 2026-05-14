@@ -115,8 +115,37 @@ function parseStatsFromText(raw: string): Partial<StatTotals> {
   return out
 }
 
+/**
+ * Tesseract drops the leading digit of tight multi-digit numbers at the
+ * game's native screenshot resolution (e.g. "1115%" reads as "115%"). A clean
+ * 2x nearest-neighbor upscale fixes it. Skip the upscale on already-large
+ * inputs so OCR latency doesn't balloon — anything that would land past
+ * ~4000px on its longest side already has enough character height.
+ */
+async function upscaleForOcr(file: File): Promise<HTMLCanvasElement | File> {
+  const bitmap = await createImageBitmap(file)
+  const maxDim = Math.max(bitmap.width, bitmap.height)
+  if (maxDim * 2 > 4000) {
+    bitmap.close()
+    return file
+  }
+  const canvas = document.createElement('canvas')
+  canvas.width = bitmap.width * 2
+  canvas.height = bitmap.height * 2
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    bitmap.close()
+    return file
+  }
+  ctx.imageSmoothingEnabled = false
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  bitmap.close()
+  return canvas
+}
+
 export async function ocrStatsFromImage(file: File): Promise<Partial<StatTotals>> {
-  const result = await recognize(file, 'eng', {
+  const input = await upscaleForOcr(file)
+  const result = await recognize(input, 'eng', {
     logger: () => {
       // silent
     },
