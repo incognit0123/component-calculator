@@ -134,7 +134,9 @@ export async function solve(
     cancelled: false,
     truncated: false,
     lastYield: started,
-    lastProgress: started,
+    // Back-date so the first improvement bypasses the throttle and always
+    // reaches the UI as a preliminary result, even if it's found early.
+    lastProgress: started - PROGRESS_INTERVAL_MS,
   }
 
   const piecesByShape = groupPiecesByShape(inventory)
