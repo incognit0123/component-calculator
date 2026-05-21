@@ -977,6 +977,7 @@ export default function App() {
             />
             <PieceInventory
               pieces={pieces}
+              currentStats={currentStats}
               onChange={setPieces}
               unusedIds={
                 new Set(result?.unusedPieceIds ?? [])

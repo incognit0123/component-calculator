@@ -44,6 +44,19 @@ export function formula(s: StatTotals): number {
   )
 }
 
+/**
+ * Marginal damage-formula gain of adding a single piece's full buff on top of
+ * `currentStats`: `formula(currentStats + pieceBuff) − formula(currentStats)`.
+ * Ignores line bonuses and sync-rate scaling — purely a ranking signal for
+ * sorting the inventory against the player's pre-mount stats.
+ */
+export function marginalGainOf(piece: Piece, currentStats: StatTotals): number {
+  const before = formula(currentStats)
+  const after = cloneStats(currentStats)
+  after[piece.stat] += BUFF_TABLE[piece.quality][piece.stat]
+  return formula(after) - before
+}
+
 export function cloneStats(s: StatTotals): StatTotals {
   return { ...s }
 }
