@@ -39,7 +39,7 @@ export function PieceCard({
   const stat = STAT_META[piece.stat]
   return (
     <div
-      className={`panel-inner p-3 flex flex-col gap-2 ${
+      className={`panel-inner p-3 flex flex-col gap-2 min-h-[140px] ${
         dim ? 'opacity-50' : ''
       } ${isDragging ? 'opacity-60 shadow-lg' : ''}`}
     >
