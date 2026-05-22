@@ -17,7 +17,11 @@ import { CSS } from '@dnd-kit/utilities'
 import { Dropdown } from 'antd'
 import { v4 as uuid } from 'uuid'
 import type { Piece, StatTotals } from '../data/types'
-import { sortByMarginalGain, sortByQualityShape } from '../utils/sortPieces'
+import {
+  sortByMarginalGain,
+  sortByQualityShape,
+  sortByShapeQuality,
+} from '../utils/sortPieces'
 import { PieceCard } from './PieceCard'
 import { PieceEditor } from './PieceEditor'
 import { PanelShell } from './PanelShell'
@@ -128,6 +132,9 @@ export function PieceInventory({
   const handleSortByQuality = () => {
     onChange(sortByQualityShape(pieces))
   }
+  const handleSortByShape = () => {
+    onChange(sortByShapeQuality(pieces))
+  }
   const handleSortByGain = () => {
     onChange(sortByMarginalGain(pieces, currentStats))
   }
@@ -138,6 +145,11 @@ export function PieceInventory({
       key: 'quality',
       label: 'By quality',
       onClick: handleSortByQuality,
+    },
+    {
+      key: 'shape',
+      label: 'By shape',
+      onClick: handleSortByShape,
     },
     {
       key: 'gain',

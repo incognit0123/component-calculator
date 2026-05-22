@@ -35,6 +35,23 @@ export function sortByQualityShape(pieces: Piece[]): Piece[] {
 }
 
 /**
+ * Sort pieces by shape (declared O,I,T,L,J order), then high-to-low by quality,
+ * then by stat (declared order in `src/data/stats.ts`), then by buff value.
+ * Returns a new array; does not mutate the input.
+ */
+export function sortByShapeQuality(pieces: Piece[]): Piece[] {
+  return [...pieces].sort((a, b) => {
+    const s = SHAPE_RANK[a.shape] - SHAPE_RANK[b.shape]
+    if (s !== 0) return s
+    const q = QUALITY_RANK[b.quality] - QUALITY_RANK[a.quality]
+    if (q !== 0) return q
+    const t = STAT_RANK[a.stat] - STAT_RANK[b.stat]
+    if (t !== 0) return t
+    return BUFF_TABLE[b.quality][b.stat] - BUFF_TABLE[a.quality][a.stat]
+  })
+}
+
+/**
  * Sort pieces high-to-low by marginal damage-formula gain against
  * `currentStats`. Marginal gain is computed once per piece (cheap; the formula
  * is linear in each individual stat) and the resulting sort is stable on ties.
