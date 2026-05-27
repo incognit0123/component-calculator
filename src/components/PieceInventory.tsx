@@ -15,8 +15,10 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Dropdown } from 'antd'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
 import type { Piece, StatTotals } from '../data/types'
+import { usePersistedState } from '../hooks/usePersistedState'
 import {
   sortByMarginalGain,
   sortByQualityShape,
@@ -25,6 +27,10 @@ import {
 import { PieceCard } from './PieceCard'
 import { PieceEditor } from './PieceEditor'
 import { PanelShell } from './PanelShell'
+
+const COLLAPSED_KEY = 'mount-opt:inventory-collapsed:v1'
+// 4 rows of 140px-min tiles + 3 row-gaps of 12px
+const COLLAPSED_MAX_HEIGHT = 4 * 140 + 3 * 12
 
 interface Props {
   pieces: Piece[]
@@ -83,6 +89,10 @@ export function PieceInventory({
 }: Props) {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<Piece | null>(null)
+  const [collapsed, setCollapsed] = usePersistedState<boolean>(
+    COLLAPSED_KEY,
+    false,
+  )
 
   // Small drag-activation distance avoids triggering drags on stray click
   // motion while the user is reaching for the grip handle.
@@ -200,25 +210,43 @@ export function PieceInventory({
           No pieces yet. Click <span className="text-white">Add piece</span> to build your inventory.
         </p>
       ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext items={pieceIds} strategy={rectSortingStrategy}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {pieces.map((p) => (
-                <SortablePieceCard
-                  key={p.id}
-                  piece={p}
-                  dim={unusedIds?.has(p.id)}
-                  onEdit={() => openEdit(p)}
-                  onDelete={() => handleDelete(p.id)}
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
+        <>
+          <div
+            className={collapsed ? 'overflow-y-auto pr-1' : ''}
+            style={collapsed ? { maxHeight: COLLAPSED_MAX_HEIGHT } : undefined}
+          >
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext items={pieceIds} strategy={rectSortingStrategy}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {pieces.map((p) => (
+                    <SortablePieceCard
+                      key={p.id}
+                      piece={p}
+                      dim={unusedIds?.has(p.id)}
+                      onEdit={() => openEdit(p)}
+                      onDelete={() => handleDelete(p.id)}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          </div>
+          <div className="flex justify-center mt-3">
+            <button
+              type="button"
+              onClick={() => setCollapsed((c) => !c)}
+              aria-label={collapsed ? 'Expand inventory' : 'Collapse inventory'}
+              title={collapsed ? 'Expand inventory' : 'Collapse inventory'}
+              className="flex items-center justify-center w-8 h-8 rounded-full border border-[#151922] bg-[#2f354a] text-gray-300 hover:bg-[#3b435d] hover:text-white transition"
+            >
+              {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+            </button>
+          </div>
+        </>
       )}
 
       <PieceEditor
