@@ -614,7 +614,7 @@ export default function App() {
   )
   const [fullTimeLimit, setFullTimeLimit] = usePersistedState<FullTimeLimit>(
     FULL_LIMIT_KEY,
-    { enabled: false, seconds: 30 },
+    { enabled: true, seconds: 30 },
   )
   const [profiles, setProfiles] = usePersistedState<SavedProfile[]>(
     PROFILES_KEY,
