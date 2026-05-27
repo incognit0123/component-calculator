@@ -30,7 +30,6 @@ interface Props {
   boardCount: number
   exploredCount?: number
   progressLabel?: string
-  statusLabel?: string
 }
 
 interface BarProps {
@@ -111,7 +110,6 @@ export function OptimizerPanel({
   boardCount,
   exploredCount,
   progressLabel,
-  statusLabel,
 }: Props) {
   const totalMs = fullTimeLimit.enabled
     ? fullTimeLimit.seconds * 1000 * Math.max(1, boardCount)
@@ -119,19 +117,10 @@ export function OptimizerPanel({
 
   return (
     <PanelShell title="Optimizer">
-      <header className="flex items-center justify-end mt-1 mb-4">
-        {statusLabel && (
-          <span className="text-xs text-gray-300 leading-tight text-right">
-            {statusLabel}
-          </span>
-        )}
-      </header>
-
       <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between">
         <div className="flex flex-col gap-3 min-w-0">
           {multipleMountsUnlocked && (
             <div>
-              <div className="text-xs text-gray-400 mb-1.5">Optimize</div>
               <div className="inline-flex rounded-full border border-bg-line bg-bg-elev p-0.5">
                 <button
                   type="button"

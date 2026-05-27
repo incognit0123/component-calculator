@@ -27,7 +27,6 @@ import { STAT_KEYS, zeroStats } from './data/stats'
 import type { Piece, StatTotals } from './data/types'
 import { usePersistedState } from './hooks/usePersistedState'
 import { useOptimizer } from './hooks/useOptimizer'
-import { formula } from './optimizer/scoring'
 import type { BoardResult, MountConfig } from './optimizer/types'
 
 const STATS_KEY = 'mount-opt:current-stats:v1'
@@ -658,7 +657,6 @@ export default function App() {
     })
   }, [result])
 
-  const selectedMount = MOUNTS[selectedMountKey]
   const selectedMountLevel = mountLevels[selectedMountKey]
   const unlockedKeys = MOUNT_KEYS.filter((k) => unlockedMounts[k])
   const unlockedCount = unlockedKeys.length
@@ -714,29 +712,11 @@ export default function App() {
     })
   }
 
-  const currentScore = useMemo(() => formula(currentStats), [currentStats])
-
   const improvementPct = (before: number, after: number) => {
     if (before <= 0) return '—'
     const pct = ((after - before) / before) * 100
     return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`
   }
-
-  const status_label = status.running
-    ? `Running…${
-        status.progress
-          ? ` (${status.progress.explored.toLocaleString()} explored${
-              status.progress.currentMountKey
-                ? ` · ${MOUNTS[status.progress.currentMountKey].name}`
-                : ''
-            })`
-          : ''
-      }`
-    : status.result
-      ? `${status.result.elapsedMs.toFixed(0)}ms${
-          status.result.truncated ? ' · timed out' : ''
-        }`
-      : undefined
 
   // Resolve the currently-displayed board.
   const displayedBoard: BoardResult | null = useMemo(() => {
@@ -981,46 +961,34 @@ export default function App() {
               <h1 className="text-xl font-bold text-white">
                 Mount Board Optimizer
               </h1>
-              <p className="text-xs text-gray-400">
-                Survivor.io · finds the best layout for your{' '}
-                {selectedMount.name} ({selectedMount.cols} cols × 8 rows)
-              </p>
             </div>
-            <div className="text-right text-xs text-gray-400 flex flex-col items-end gap-2">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsProfilesOpen((prev) => !prev)}
-                  className="app-button px-2.5 py-1 text-xs"
-                  aria-expanded={isProfilesOpen}
-                >
-                  Profiles
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setImportError(null)
-                    setImportText('')
-                    setIsImportOpen(true)
-                  }}
-                  className="app-button px-2.5 py-1 text-xs"
-                >
-                  Import
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenExport}
-                  className="app-button px-2.5 py-1 text-xs"
-                >
-                  Export
-                </button>
-              </div>
-              <div>
-                Current score:{' '}
-                <span className="text-white font-semibold">
-                  {currentScore.toFixed(3)}×
-                </span>
-              </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsProfilesOpen((prev) => !prev)}
+                className="app-button px-2.5 py-1 text-xs"
+                aria-expanded={isProfilesOpen}
+              >
+                Profiles
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setImportError(null)
+                  setImportText('')
+                  setIsImportOpen(true)
+                }}
+                className="app-button px-2.5 py-1 text-xs"
+              >
+                Import
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenExport}
+                className="app-button px-2.5 py-1 text-xs"
+              >
+                Export
+              </button>
             </div>
           </div>
         </header>
@@ -1067,7 +1035,6 @@ export default function App() {
                   : 1
               }
               exploredCount={status.progress?.explored}
-              statusLabel={status_label}
               progressLabel={
                 status.error
                   ? `Error: ${status.error}`
@@ -1224,9 +1191,7 @@ export default function App() {
             </div>
 
             <p className="text-xs text-gray-400">
-              Copy this string and share or save it for later import. New
-              exports use a compact v6 format; import accepts older v1–v5
-              exports too.
+              Copy this string and share or save it for later import.
             </p>
 
             <textarea

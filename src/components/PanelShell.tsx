@@ -30,7 +30,7 @@ export function PanelShell({
         styles={{
           body: {
             padding: 20,
-            paddingTop: 24,
+            paddingTop: 40,
           },
         }}
       >
