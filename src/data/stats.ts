@@ -1,4 +1,12 @@
 import type { StatKey, StatTotals } from './types'
+import critDamageIcon from '../assets/icons/pets/skills/inspiration.webp'
+import skillDamageIcon from '../assets/icons/pets/skills/encouragement.webp'
+import shieldDamageIcon from '../assets/icons/pets/skills/shield_damage.webp'
+import weakenedIcon from '../assets/icons/pets/skills/weakened.webp'
+import poisonedIcon from '../assets/icons/pets/skills/poisoned.webp'
+import chilledIcon from '../assets/icons/pets/skills/chilled.webp'
+import lacerationIcon from '../assets/icons/stats/laceration.webp'
+import bossesIcon from '../assets/icons/damage_boss.webp'
 
 export interface StatMeta {
   key: StatKey
@@ -12,49 +20,49 @@ export const STATS: StatMeta[] = [
     key: 'critDamage',
     name: 'Crit Damage',
     short: 'Crit',
-    icon: 'https://sio-cdn.exp0.dev/icons/pets/skills/inspiration.webp',
+    icon: critDamageIcon,
   },
   {
     key: 'skillDamage',
     name: 'Skill Damage',
     short: 'Skill',
-    icon: 'https://sio-cdn.exp0.dev/icons/pets/skills/encouragement.webp',
+    icon: skillDamageIcon,
   },
   {
     key: 'shieldDamage',
     name: 'Shield Damage',
     short: 'Shield',
-    icon: 'https://sio-cdn.exp0.dev/icons/pets/skills/shield_damage.webp',
+    icon: shieldDamageIcon,
   },
   {
     key: 'toWeakened',
     name: 'Damage to Weakened',
     short: 'Weakened',
-    icon: 'https://sio-cdn.exp0.dev/icons/pets/skills/weakened.webp',
+    icon: weakenedIcon,
   },
   {
     key: 'toPoisoned',
     name: 'Damage to Poisoned',
     short: 'Poisoned',
-    icon: 'https://sio-cdn.exp0.dev/icons/pets/skills/poisoned.webp',
+    icon: poisonedIcon,
   },
   {
     key: 'toChilled',
     name: 'Damage to Chilled',
     short: 'Chilled',
-    icon: 'https://sio-cdn.exp0.dev/icons/pets/skills/chilled.webp',
+    icon: chilledIcon,
   },
   {
     key: 'laceration',
     name: 'Laceration',
     short: 'Lacer.',
-    icon: 'https://sio-cdn.exp0.dev/icons/stats/laceration.webp',
+    icon: lacerationIcon,
   },
   {
     key: 'toBosses',
     name: 'Damage to Bosses',
     short: 'Boss',
-    icon: 'https://sio-cdn.exp0.dev/icons/damage_boss.webp',
+    icon: bossesIcon,
   },
 ]
 

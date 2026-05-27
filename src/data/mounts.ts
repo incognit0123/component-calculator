@@ -1,4 +1,7 @@
 import type { LineBonusTier, MountLevel } from './lineBonuses'
+import electricScooterIcon from '../assets/icons/mounts/electric_scooter.webp'
+import techHoverboardIcon from '../assets/icons/mounts/tech_hoverboard.webp'
+import doomsteedIcon from '../assets/icons/mounts/doomsteed.webp'
 
 export type MountKey = 'electricScooter' | 'techHoverboard' | 'doomsteed'
 
@@ -77,7 +80,7 @@ export const MOUNTS: Record<MountKey, MountSpec> = {
   electricScooter: {
     key: 'electricScooter',
     name: 'Electric Scooter',
-    iconUrl: 'https://sio-cdn.exp0.dev/icons/mounts/electric_scooter.webp',
+    iconUrl: electricScooterIcon,
     bgColor: '#4A93E8',
     cols: 7,
     lineBonusTiers: ELECTRIC_SCOOTER_TIERS,
@@ -86,7 +89,7 @@ export const MOUNTS: Record<MountKey, MountSpec> = {
   techHoverboard: {
     key: 'techHoverboard',
     name: 'Tech Hoverboard',
-    iconUrl: 'https://sio-cdn.exp0.dev/icons/mounts/tech_hoverboard.webp',
+    iconUrl: techHoverboardIcon,
     bgColor: '#DB25FF',
     cols: 9,
     lineBonusTiers: TECH_HOVERBOARD_TIERS,
@@ -95,7 +98,7 @@ export const MOUNTS: Record<MountKey, MountSpec> = {
   doomsteed: {
     key: 'doomsteed',
     name: 'Doomsteed',
-    iconUrl: 'https://sio-cdn.exp0.dev/icons/mounts/doomsteed.webp',
+    iconUrl: doomsteedIcon,
     bgColor: '#FE4C6A',
     cols: 12,
     lineBonusTiers: DOOMSTEED_TIERS,
