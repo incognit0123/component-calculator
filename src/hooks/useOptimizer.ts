@@ -14,6 +14,9 @@ export interface OptimizerStatus {
     explored: number
     partial: OptimizerResult
     currentMountKey?: MountKey
+    fractionComplete?: number
+    boardIndex?: number
+    boardCount?: number
   } | null
 }
 
@@ -41,6 +44,9 @@ export function useOptimizer() {
             explored: msg.explored,
             partial: msg.best,
             currentMountKey: msg.currentMountKey,
+            fractionComplete: msg.fractionComplete,
+            boardIndex: msg.boardIndex,
+            boardCount: msg.boardCount,
           },
         }))
       } else if (msg.type === 'done') {

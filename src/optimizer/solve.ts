@@ -32,7 +32,17 @@ export interface SolveOptions {
   mountKey?: MountKey
   mountLevel?: MountLevel
   isCancelled?: () => boolean
-  onProgress?: (best: BoardSolveResult, explored: number) => void
+  /**
+   * Called as the solver makes progress. `fractionComplete` is in [0, 1] and
+   * tracks how much of this board's distribution queue has been processed
+   * (either fully evaluated or pruned). In the K<G regime it stays at 0 until
+   * completion and is then implicitly 1 when the solver returns.
+   */
+  onProgress?: (
+    best: BoardSolveResult,
+    explored: number,
+    fractionComplete: number,
+  ) => void
   /** Hard time cap (ms). On expiry returns best-so-far with truncated=true. */
   timeBudgetMs?: number
   /**
@@ -117,6 +127,9 @@ export async function solve(
     // Back-date so the first improvement bypasses the throttle and always
     // reaches the UI as a preliminary result, even if it's found early.
     lastProgress: started - PROGRESS_INTERVAL_MS,
+    distTotal: 0,
+    distProcessed: 0,
+    latestBest: null,
   }
 
   const piecesByShape = groupPiecesByShape(inventory)
@@ -143,12 +156,22 @@ interface SolveContext {
   deadline: number
   started: number
   isCancelled?: () => boolean
-  onProgress?: (best: BoardSolveResult, explored: number) => void
+  onProgress?: (
+    best: BoardSolveResult,
+    explored: number,
+    fractionComplete: number,
+  ) => void
   explored: number
   cancelled: boolean
   truncated: boolean
   lastYield: number
   lastProgress: number
+  /** Distributions queued for evaluation in the K≥G regime. 0 in the K<G regime. */
+  distTotal: number
+  /** Distributions processed (evaluated or pruned) so far. */
+  distProcessed: number
+  /** Latest best-so-far snapshot (kept so periodic progress can emit without a fresh improvement). */
+  latestBest: BoardSolveResult | null
 }
 
 function groupPiecesByShape(pieces: Piece[]): Record<ShapeKey, Piece[]> {
@@ -238,20 +261,31 @@ async function solveFullInventory(
   }))
   ranked.sort((a, b) => b.upperBound - a.upperBound)
 
+  ctx.distTotal = ranked.length
+  ctx.distProcessed = 0
+
   let best: BoardSolveResult | null = null
   let bestScore = formula(ctx.currentStats)
 
   for (const { dist, upperBound: ub } of ranked) {
     if (await maybeYield(ctx)) break
 
-    if (ub <= bestScore) continue
+    ctx.distProcessed++
+
+    if (ub <= bestScore) {
+      maybeProgress(ctx)
+      continue
+    }
 
     const tiling = tileDistribution(
       dist,
       ctx.cols,
       effectiveLineTarget(totalShapeCells(dist), ctx.maxBonusLines, ctx.cols),
     )
-    if (!tiling) continue
+    if (!tiling) {
+      maybeProgress(ctx)
+      continue
+    }
 
     const selection = selectPieces(
       ctx.inventory,
@@ -267,8 +301,9 @@ async function solveFullInventory(
     if (selection.score > bestScore) {
       bestScore = selection.score
       best = buildResult(ctx, selection.picks, tiling.slots, tiling.lines)
-      maybeProgress(ctx, best)
+      ctx.latestBest = best
     }
+    maybeProgress(ctx)
   }
 
   return best ?? emptyResult(ctx)
@@ -435,10 +470,16 @@ async function maybeYield(ctx: SolveContext): Promise<boolean> {
   return ctx.cancelled
 }
 
-function maybeProgress(ctx: SolveContext, best: BoardSolveResult): void {
+function maybeProgress(ctx: SolveContext): void {
   if (!ctx.onProgress) return
   const now = performance.now()
   if (now - ctx.lastProgress < PROGRESS_INTERVAL_MS) return
   ctx.lastProgress = now
-  ctx.onProgress(best, ctx.explored)
+  const fraction =
+    ctx.distTotal > 0 ? Math.min(1, ctx.distProcessed / ctx.distTotal) : 0
+  // If no best-so-far exists yet (no improvement has been found), synthesize a
+  // baseline result so the orchestrator still has something to forward — the
+  // fraction signal is the load-bearing field for the progress bar anyway.
+  const best = ctx.latestBest ?? emptyResult(ctx)
+  ctx.onProgress(best, ctx.explored, fraction)
 }

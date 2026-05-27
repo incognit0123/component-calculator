@@ -27,12 +27,18 @@ ctx.addEventListener(
         best: OptimizerResult,
         explored: number,
         currentMountKey: MountKey,
+        fractionComplete: number,
+        boardIndex: number,
+        boardCount: number,
       ) => {
         const msg: WorkerMessage = {
           type: 'progress',
           best,
           explored,
           currentMountKey,
+          fractionComplete,
+          boardIndex,
+          boardCount,
         }
         ctx.postMessage(msg)
       }

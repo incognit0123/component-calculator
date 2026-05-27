@@ -15,11 +15,16 @@ export interface SolveAllOptions {
   /**
    * Reports best-so-far across the orchestration. `currentMountKey` is the
    * mount being optimized at the moment progress was emitted.
+   * `fractionComplete` is the per-board fraction (resets per board, not the
+   * aggregate across the whole run); `boardIndex` is 1-based.
    */
   onProgress?: (
     best: OptimizerResult,
     explored: number,
     currentMountKey: MountKey,
+    fractionComplete: number,
+    boardIndex: number,
+    boardCount: number,
   ) => void
   /**
    * Per-board time budget. Each board's `solve()` gets this same budget
@@ -87,10 +92,48 @@ export async function solveAll(
       break
     }
 
+    const boardIndex = i + 1
+    const boardCount = order.length
+
+    // Emit a board-start signal so the UI's per-board bar resets to 0 and the
+    // i/N indicator advances the moment the next board begins, rather than
+    // sitting at the previous board's final fraction until solve's first
+    // throttled emit arrives. Includes an empty placeholder for the current
+    // board so the UI (which renders against status.progress.partial) always
+    // sees the in-progress board in the result.
+    if (opts.onProgress) {
+      const placeholder: BoardResult = {
+        mountKey: config.mountKey,
+        mountLevel: config.mountLevel,
+        isEquipped: config.isEquipped,
+        syncRate: syncRatePct,
+        placements: [],
+        buffsFromPieces: zeroStats(),
+        buffsFromLines: zeroStats(),
+        linesFilled: 0,
+      }
+      const partial = aggregate(
+        [...boards, placeholder],
+        equipped.mountKey,
+        currentStats,
+        remainingInventory.map((p) => p.id),
+        truncated,
+        performance.now() - started,
+      )
+      opts.onProgress(
+        partial,
+        0,
+        config.mountKey,
+        0,
+        boardIndex,
+        boardCount,
+      )
+    }
+
     // Forward solve's progress events as a partial OptimizerResult that
     // includes already-finished boards plus the current board's best-so-far.
     const onBoardProgress = opts.onProgress
-      ? (best: BoardSolveResult, explored: number) => {
+      ? (best: BoardSolveResult, explored: number, fraction: number) => {
           const partialBoard = makeBoardResult(
             best,
             config,
@@ -107,7 +150,14 @@ export async function solveAll(
             truncated,
             performance.now() - started,
           )
-          opts.onProgress?.(partial, explored, config.mountKey)
+          opts.onProgress?.(
+            partial,
+            explored,
+            config.mountKey,
+            fraction,
+            boardIndex,
+            boardCount,
+          )
         }
       : undefined
 

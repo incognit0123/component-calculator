@@ -23,75 +23,117 @@ interface Props {
   scope: OptimizeScope
   onScopeChange: (next: OptimizeScope) => void
   /**
-   * Number of boards a Run will optimize (1 if only the equipped mount is in
-   * scope, otherwise the count of unlocked mounts). Used to size the progress
-   * bar's worst-case duration since `fullTimeLimit` is applied per-board.
+   * Number of boards a Run will optimize. Used as the fallback denominator for
+   * the i/N indicator before the first progress event arrives.
    */
   boardCount: number
   exploredCount?: number
   progressLabel?: string
+  /** Per-board completion fraction in [0, 1] from the latest progress event. */
+  fractionComplete?: number
+  /** 1-based index of the board currently being optimized. */
+  boardIndex?: number
+  /** Authoritative board count from the optimizer (overrides the prop fallback). */
+  progressBoardCount?: number
 }
 
 interface BarProps {
   running: boolean
-  totalMs?: number
+  /** Per-board time budget in ms (when the time-limit toggle is on). */
+  timeBudgetMsPerBoard?: number
   exploredCount?: number
+  fractionComplete?: number
+  boardIndex?: number
+  boardCount?: number
 }
 
-function ProgressBar({ running, totalMs, exploredCount }: BarProps) {
-  const [startedAt, setStartedAt] = useState<number | null>(null)
+function ProgressBar({
+  running,
+  timeBudgetMsPerBoard,
+  exploredCount,
+  fractionComplete,
+  boardIndex,
+  boardCount,
+}: BarProps) {
+  const [boardStartedAt, setBoardStartedAt] = useState<number | null>(null)
+  const lastBoardIndexRef = useRef<number | undefined>(undefined)
   const [, setTick] = useState(0)
   const intervalRef = useRef<number | null>(null)
 
   useEffect(() => {
-    if (running) {
-      setStartedAt(performance.now())
-      intervalRef.current = window.setInterval(() => {
-        setTick((t) => t + 1)
-      }, 100)
-      return () => {
-        if (intervalRef.current != null) {
-          window.clearInterval(intervalRef.current)
-          intervalRef.current = null
-        }
+    if (!running) {
+      setBoardStartedAt(null)
+      lastBoardIndexRef.current = undefined
+      return
+    }
+    if (boardIndex !== lastBoardIndexRef.current) {
+      lastBoardIndexRef.current = boardIndex
+      setBoardStartedAt(performance.now())
+    }
+  }, [running, boardIndex])
+
+  useEffect(() => {
+    if (!running) return
+    if (boardStartedAt == null) setBoardStartedAt(performance.now())
+    intervalRef.current = window.setInterval(() => {
+      setTick((t) => t + 1)
+    }, 100)
+    return () => {
+      if (intervalRef.current != null) {
+        window.clearInterval(intervalRef.current)
+        intervalRef.current = null
       }
     }
-    setStartedAt(null)
-    return undefined
-  }, [running])
+  }, [running, boardStartedAt])
 
   if (!running) return null
 
-  const elapsed = startedAt != null ? performance.now() - startedAt : 0
-  const determinate = totalMs != null && totalMs > 0
-  const pct = determinate ? Math.min(100, (elapsed / totalMs) * 100) : 0
+  const elapsedThisBoard =
+    boardStartedAt != null ? performance.now() - boardStartedAt : 0
+  const timed = timeBudgetMsPerBoard != null && timeBudgetMsPerBoard > 0
+  const timePct = timed
+    ? Math.min(100, (elapsedThisBoard / timeBudgetMsPerBoard) * 100)
+    : 0
+  const fractionPct = Math.min(100, Math.max(0, (fractionComplete ?? 0) * 100))
+  const showIndicator = (boardCount ?? 0) > 1
 
   return (
-    <div className="mt-3">
-      {determinate ? (
-        <div className="h-1.5 rounded-full bg-bg-line overflow-hidden">
+    <div className="mt-3 flex items-start gap-2">
+      {showIndicator && (
+        <span className="text-xs text-gray-300 tabular-nums shrink-0 pt-0.5">
+          {boardIndex ?? 1}/{boardCount}
+        </span>
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="h-2.5 rounded-full bg-bg-line overflow-hidden">
           <div
             className="h-full bg-accent"
-            style={{ width: `${pct}%`, transition: 'width 100ms linear' }}
+            style={{
+              width: `${fractionPct}%`,
+              transition: 'width 200ms linear',
+            }}
           />
         </div>
-      ) : (
-        <div className="flex items-center gap-2 text-xs text-gray-400">
-          <span
-            className="inline-block w-2 h-2 rounded-full bg-accent animate-pulse"
-            aria-hidden
-          />
-          <span>Working…</span>
-        </div>
-      )}
-      <div className="flex justify-between text-[11px] text-gray-500 mt-1">
-        <span>
-          {(elapsed / 1000).toFixed(1)}s elapsed
-          {determinate && ` / ${(totalMs! / 1000).toFixed(1)}s budget`}
-        </span>
-        {exploredCount != null && exploredCount > 0 && (
-          <span>{exploredCount.toLocaleString()} explored</span>
+        {timed && (
+          <div className="h-1.5 rounded-full bg-bg-line overflow-hidden mt-0.5">
+            <div
+              className="h-full bg-accent/50"
+              style={{
+                width: `${timePct}%`,
+                transition: 'width 100ms linear',
+              }}
+            />
+          </div>
         )}
+        <div className="flex justify-between text-[11px] text-gray-500 mt-1">
+          <span>
+            {(elapsedThisBoard / 1000).toFixed(1)}s elapsed
+            {timed && ` / ${(timeBudgetMsPerBoard! / 1000).toFixed(1)}s`}
+          </span>
+          {exploredCount != null && exploredCount > 0 && (
+            <span>{exploredCount.toLocaleString()} explored</span>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -110,10 +152,14 @@ export function OptimizerPanel({
   boardCount,
   exploredCount,
   progressLabel,
+  fractionComplete,
+  boardIndex,
+  progressBoardCount,
 }: Props) {
-  const totalMs = fullTimeLimit.enabled
-    ? fullTimeLimit.seconds * 1000 * Math.max(1, boardCount)
+  const timeBudgetMsPerBoard = fullTimeLimit.enabled
+    ? fullTimeLimit.seconds * 1000
     : undefined
+  const effectiveBoardCount = progressBoardCount ?? boardCount
 
   return (
     <PanelShell title="Optimizer">
@@ -218,8 +264,11 @@ export function OptimizerPanel({
 
       <ProgressBar
         running={running}
-        totalMs={totalMs}
+        timeBudgetMsPerBoard={timeBudgetMsPerBoard}
         exploredCount={exploredCount}
+        fractionComplete={fractionComplete}
+        boardIndex={boardIndex}
+        boardCount={effectiveBoardCount}
       />
 
       {progressLabel && (

@@ -98,6 +98,16 @@ export interface ProgressMessage {
   explored: number
   /** Mount currently being optimized (when reported mid-orchestration). */
   currentMountKey?: MountKey
+  /**
+   * Per-board completion fraction [0, 1] for the board currently being
+   * optimized. Resets to 0 at the start of each board. Undefined when the
+   * solver can't estimate it (e.g., K<G regime before completion).
+   */
+  fractionComplete?: number
+  /** 1-based index of the board currently being optimized. */
+  boardIndex?: number
+  /** Total number of boards this run will optimize. */
+  boardCount?: number
 }
 
 export interface DoneMessage {

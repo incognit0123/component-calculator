@@ -1035,6 +1035,9 @@ export default function App() {
                   : 1
               }
               exploredCount={status.progress?.explored}
+              fractionComplete={status.progress?.fractionComplete}
+              boardIndex={status.progress?.boardIndex}
+              progressBoardCount={status.progress?.boardCount}
               progressLabel={
                 status.error
                   ? `Error: ${status.error}`
