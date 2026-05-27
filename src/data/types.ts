@@ -27,5 +27,3 @@ export interface Piece {
 }
 
 export type StatTotals = Record<StatKey, number>
-
-export type OptimizerMode = 'normal' | 'full'

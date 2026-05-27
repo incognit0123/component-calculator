@@ -24,7 +24,7 @@ import {
 import { QUALITIES } from './data/qualities'
 import { SHAPE_KEYS } from './data/shapes'
 import { STAT_KEYS, zeroStats } from './data/stats'
-import type { OptimizerMode, Piece, StatTotals } from './data/types'
+import type { Piece, StatTotals } from './data/types'
 import { usePersistedState } from './hooks/usePersistedState'
 import { useOptimizer } from './hooks/useOptimizer'
 import { formula } from './optimizer/scoring'
@@ -32,7 +32,6 @@ import type { BoardResult, MountConfig } from './optimizer/types'
 
 const STATS_KEY = 'mount-opt:current-stats:v1'
 const PIECES_KEY = 'mount-opt:pieces:v1'
-const MODE_KEY = 'mount-opt:mode:v1'
 const LEGACY_MOUNT_LEVEL_KEY = 'mount-opt:mount-level:v1'
 const MOUNT_LEVELS_KEY = 'mount-opt:mount-levels:v1'
 const SELECTED_MOUNT_KEY = 'mount-opt:selected-mount:v1'
@@ -45,6 +44,7 @@ const EXPORT_PREFIX_V2 = 'mount-opt:v2:'
 const EXPORT_PREFIX_V3 = 'mount-opt:v3:'
 const EXPORT_PREFIX_V4 = 'mount-opt:v4:'
 const EXPORT_PREFIX_V5 = 'mount-opt:v5:'
+const EXPORT_PREFIX_V6 = 'mount-opt:v6:'
 
 type MountLevelMap = Record<MountKey, MountLevel>
 type UnlockedMap = Record<MountKey, boolean>
@@ -52,7 +52,6 @@ type UnlockedMap = Record<MountKey, boolean>
 interface ExportedConfig {
   currentStats: StatTotals
   pieces: Piece[]
-  mode: OptimizerMode
   selectedMountKey: MountKey
   mountLevels: MountLevelMap
   unlockedMounts: UnlockedMap
@@ -60,7 +59,6 @@ interface ExportedConfig {
   fullTimeLimit: FullTimeLimit
 }
 
-type CompactMode = 'n' | 'f'
 type CompactScope = 'a' | 'e'
 type CompactPiece = [shape: Piece['shape'], quality: Piece['quality'], stat: Piece['stat']]
 type CompactZeroOne = 0 | 1
@@ -70,11 +68,10 @@ type CompactUnlocked = {
   doomsteed: CompactZeroOne
 }
 
-interface ExportedConfigV5 {
-  version: 5
+interface ExportedConfigV6 {
+  version: 6
   s: number[]
   p: CompactPiece[]
-  m: CompactMode
   mt: MountKey
   lv: { electricScooter: number; techHoverboard: number; doomsteed: number }
   u: CompactUnlocked
@@ -103,11 +100,10 @@ function base64ToBytes(base64: string): Uint8Array {
 }
 
 function encodeConfig(config: ExportedConfig): string {
-  const compact: ExportedConfigV5 = {
-    version: 5,
+  const compact: ExportedConfigV6 = {
+    version: 6,
     s: STAT_KEYS.map((key) => config.currentStats[key]),
     p: config.pieces.map((piece) => [piece.shape, piece.quality, piece.stat]),
-    m: config.mode === 'normal' ? 'n' : 'f',
     mt: config.selectedMountKey,
     lv: {
       electricScooter: config.mountLevels.electricScooter,
@@ -124,7 +120,7 @@ function encodeConfig(config: ExportedConfig): string {
   }
   const json = JSON.stringify(compact)
   const base64 = bytesToBase64(new TextEncoder().encode(json))
-  return `${EXPORT_PREFIX_V5}${base64}`
+  return `${EXPORT_PREFIX_V6}${base64}`
 }
 
 function isMountLevel(value: unknown): value is MountLevel {
@@ -293,7 +289,6 @@ function decodeCompactPayload(
   return {
     currentStats,
     pieces,
-    mode: parsed.m === 'n' ? 'normal' : 'full',
     selectedMountKey: DEFAULT_MOUNT_KEY,
     mountLevels: { ...defaultMountLevels(), electricScooter: legacyMountLevel },
     unlockedMounts: defaultUnlockedFor(DEFAULT_MOUNT_KEY),
@@ -353,7 +348,6 @@ function decodeV4Payload(parsed: Record<string, unknown>): ExportedConfig {
   return {
     currentStats,
     pieces,
-    mode: parsed.m === 'n' ? 'normal' : 'full',
     selectedMountKey,
     mountLevels: parsed.lv as MountLevelMap,
     unlockedMounts: defaultUnlockedFor(selectedMountKey),
@@ -425,7 +419,74 @@ function decodeV5Payload(parsed: Record<string, unknown>): ExportedConfig {
   return {
     currentStats,
     pieces,
-    mode: parsed.m === 'n' ? 'normal' : 'full',
+    selectedMountKey,
+    mountLevels: parsed.lv as MountLevelMap,
+    unlockedMounts,
+    optimizeScope: parsed.os === 'a' ? 'allUnlocked' : 'equippedOnly',
+    fullTimeLimit: { enabled: enabledFlag === 1, seconds },
+  }
+}
+
+function decodeV6Payload(parsed: Record<string, unknown>): ExportedConfig {
+  const u = parsed.u as Record<string, unknown> | undefined
+  const validUnlocked =
+    u != null &&
+    typeof u === 'object' &&
+    MOUNT_KEYS.every((key) => u[key] === 0 || u[key] === 1)
+  const validShape =
+    parsed.version === 6 &&
+    Array.isArray(parsed.s) &&
+    parsed.s.length === STAT_KEYS.length &&
+    parsed.s.every((value) => isFiniteNumber(value)) &&
+    Array.isArray(parsed.p) &&
+    parsed.p.every((piece) => {
+      if (!Array.isArray(piece) || piece.length !== 3) return false
+      const [shape, quality, stat] = piece
+      return (
+        SHAPE_KEYS.includes(shape as (typeof SHAPE_KEYS)[number]) &&
+        QUALITIES.some((q) => q.key === quality) &&
+        STAT_KEYS.includes(stat as (typeof STAT_KEYS)[number])
+      )
+    }) &&
+    isMountKey(parsed.mt) &&
+    isMountLevelMap(parsed.lv) &&
+    validUnlocked &&
+    (parsed.os === 'a' || parsed.os === 'e') &&
+    Array.isArray(parsed.t) &&
+    parsed.t.length === 2 &&
+    (parsed.t[0] === 0 || parsed.t[0] === 1) &&
+    isFiniteNumber(parsed.t[1]) &&
+    parsed.t[1] >= 1
+
+  if (!validShape) throw new Error('Import string data is invalid.')
+
+  const statValues = parsed.s as number[]
+  const compactPieces = parsed.p as CompactPiece[]
+  const [enabledFlag, seconds] = parsed.t as [0 | 1, number]
+
+  const currentStats = STAT_KEYS.reduce<StatTotals>((acc, key, index) => {
+    acc[key] = statValues[index]
+    return acc
+  }, zeroStats())
+
+  const pieces: Piece[] = compactPieces.map(([shape, quality, stat]) => ({
+    id: crypto.randomUUID(),
+    shape,
+    quality,
+    stat,
+  }))
+
+  const selectedMountKey = parsed.mt as MountKey
+  const unlockedMounts: UnlockedMap = {
+    electricScooter: u!.electricScooter === 1,
+    techHoverboard: u!.techHoverboard === 1,
+    doomsteed: u!.doomsteed === 1,
+  }
+  unlockedMounts[selectedMountKey] = true
+
+  return {
+    currentStats,
+    pieces,
     selectedMountKey,
     mountLevels: parsed.lv as MountLevelMap,
     unlockedMounts,
@@ -435,6 +496,13 @@ function decodeV5Payload(parsed: Record<string, unknown>): ExportedConfig {
 }
 
 function decodeConfig(raw: string): ExportedConfig {
+  if (raw.startsWith(EXPORT_PREFIX_V6)) {
+    const payload = raw.slice(EXPORT_PREFIX_V6.length).trim()
+    const json = new TextDecoder().decode(base64ToBytes(payload))
+    const parsed = JSON.parse(json) as Record<string, unknown>
+    return decodeV6Payload(parsed)
+  }
+
   if (raw.startsWith(EXPORT_PREFIX_V5)) {
     const payload = raw.slice(EXPORT_PREFIX_V5.length).trim()
     const json = new TextDecoder().decode(base64ToBytes(payload))
@@ -482,7 +550,6 @@ function decodeConfig(raw: string): ExportedConfig {
     return {
       currentStats: parsed.currentStats,
       pieces: parsed.pieces,
-      mode: parsed.mode,
       selectedMountKey: DEFAULT_MOUNT_KEY,
       mountLevels: defaultMountLevels(),
       unlockedMounts: defaultUnlockedFor(DEFAULT_MOUNT_KEY),
@@ -526,11 +593,6 @@ export default function App() {
     zeroStats(),
   )
   const [pieces, setPieces] = usePersistedState<Piece[]>(PIECES_KEY, [])
-  const [mode, setMode] = usePersistedState<OptimizerMode>(
-    MODE_KEY,
-    'normal',
-    (raw): raw is OptimizerMode => raw === 'normal' || raw === 'full',
-  )
   const [selectedMountKey, setSelectedMountKey] = usePersistedState<MountKey>(
     SELECTED_MOUNT_KEY,
     DEFAULT_MOUNT_KEY,
@@ -620,10 +682,9 @@ export default function App() {
   }
 
   const handleRun = () => {
-    const timeBudgetMs =
-      mode === 'full' && fullTimeLimit.enabled
-        ? fullTimeLimit.seconds * 1000
-        : undefined
+    const timeBudgetMs = fullTimeLimit.enabled
+      ? fullTimeLimit.seconds * 1000
+      : undefined
 
     const includeNonEquipped =
       optimizeScope === 'allUnlocked' && unlockedCount > 1
@@ -648,7 +709,6 @@ export default function App() {
     run({
       currentStats,
       pieces,
-      mode,
       mountConfigs,
       timeBudgetMs,
     })
@@ -663,7 +723,7 @@ export default function App() {
   }
 
   const status_label = status.running
-    ? `Running ${mode}…${
+    ? `Running…${
         status.progress
           ? ` (${status.progress.explored.toLocaleString()} explored${
               status.progress.currentMountKey
@@ -673,7 +733,7 @@ export default function App() {
           : ''
       }`
     : status.result
-      ? `${status.result.mode} · ${status.result.elapsedMs.toFixed(0)}ms${
+      ? `${status.result.elapsedMs.toFixed(0)}ms${
           status.result.truncated ? ' · timed out' : ''
         }`
       : undefined
@@ -744,7 +804,6 @@ export default function App() {
       encodeConfig({
         currentStats,
         pieces,
-        mode,
         selectedMountKey,
         mountLevels,
         unlockedMounts,
@@ -754,7 +813,6 @@ export default function App() {
     [
       currentStats,
       fullTimeLimit,
-      mode,
       mountLevels,
       optimizeScope,
       pieces,
@@ -780,7 +838,6 @@ export default function App() {
   const applyConfig = (parsed: ExportedConfig) => {
     setCurrentStats(parsed.currentStats)
     setPieces(parsed.pieces)
-    setMode(parsed.mode)
     setSelectedMountKey(parsed.selectedMountKey)
     setMountLevels(parsed.mountLevels)
     setUnlockedMounts(parsed.unlockedMounts)
@@ -995,8 +1052,6 @@ export default function App() {
 
           <div className="flex flex-col gap-5">
             <OptimizerPanel
-              mode={mode}
-              onModeChange={setMode}
               running={status.running}
               canRun={pieces.length > 0}
               onRun={handleRun}
@@ -1125,7 +1180,7 @@ export default function App() {
                 )}
 
                 <div className="text-[11px] text-gray-500 text-right">
-                  {result.mode} mode · {result.elapsedMs.toFixed(0)}ms
+                  {result.elapsedMs.toFixed(0)}ms
                   {result.truncated ? ' · timed out, best-so-far' : ''}
                 </div>
               </PanelShell>
@@ -1170,7 +1225,7 @@ export default function App() {
 
             <p className="text-xs text-gray-400">
               Copy this string and share or save it for later import. New
-              exports use a compact v5 format; import accepts older v1–v4
+              exports use a compact v6 format; import accepts older v1–v5
               exports too.
             </p>
 
@@ -1230,7 +1285,7 @@ export default function App() {
 
             <p className="text-xs text-gray-400">
               Paste an exported string from this app. Import will replace your
-              current stats, pieces, optimizer mode, and full-mode time limit.
+              current stats, pieces, mount settings, and time limit.
             </p>
 
             <textarea
@@ -1240,7 +1295,7 @@ export default function App() {
                 setImportText(e.target.value)
               }}
               className="w-full h-36 bg-bg-elev border border-bg-line rounded-md p-3 text-xs text-white focus:outline-none focus:border-accent"
-              placeholder="mount-opt:v5:..."
+              placeholder="mount-opt:v6:..."
             />
 
             {importError && <p className="text-xs text-red-400">{importError}</p>}

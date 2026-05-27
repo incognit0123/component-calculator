@@ -7,12 +7,7 @@ import {
 import { DEFAULT_MOUNT_KEY, MOUNTS, type MountKey } from '../data/mounts'
 import { MIN_PIECE_CELLS, SHAPE_KEYS } from '../data/shapes'
 import { zeroStats } from '../data/stats'
-import type {
-  OptimizerMode,
-  Piece,
-  ShapeKey,
-  StatTotals,
-} from '../data/types'
+import type { Piece, ShapeKey, StatTotals } from '../data/types'
 import { boardBits } from './board'
 import { selectPieces } from './selection'
 import {
@@ -34,18 +29,12 @@ import { BOARD_ROWS } from './types'
 import type { BoardSolveResult, Placement } from './types'
 
 export interface SolveOptions {
-  mode?: OptimizerMode
   mountKey?: MountKey
   mountLevel?: MountLevel
   isCancelled?: () => boolean
   onProgress?: (best: BoardSolveResult, explored: number) => void
   /** Hard time cap (ms). On expiry returns best-so-far with truncated=true. */
   timeBudgetMs?: number
-  /**
-   * Normal mode only: skip distributions whose upper bound doesn't promise
-   * a fractional improvement of at least this much over the current best.
-   */
-  normalToleranceEps?: number
   /**
    * Multiplier applied to every piece's buff value during optimization and
    * scoring. Default 1 (full buffs, equipped mount). Pass syncRate/100 when
@@ -60,7 +49,6 @@ export interface SolveOptions {
   disableLineBonuses?: boolean
 }
 
-const DEFAULT_NORMAL_TOLERANCE = 0.005
 const YIELD_INTERVAL_MS = 8
 const PROGRESS_INTERVAL_MS = 400
 /**
@@ -71,7 +59,7 @@ const PROGRESS_INTERVAL_MS = 400
 const NEAR_FULL_DEPTH = 2
 
 /**
- * Top-level optimizer. Replaces runFull / runNormal.
+ * Top-level optimizer.
  *
  * Two regimes based on inventory size K vs the geometric piece-cap G:
  *
@@ -83,10 +71,6 @@ const NEAR_FULL_DEPTH = 2
  *   each distribution in rank order, find a tiling and optimize the piece
  *   selection. Prune distributions whose upper bound can't beat the current
  *   best.
- *
- * Mode 'normal' adds a relative-improvement threshold so distributions whose
- * upper bound doesn't promise at least `normalToleranceEps` fractional gain
- * over the current best are skipped early.
  */
 export async function solve(
   inventory: Piece[],
@@ -94,7 +78,6 @@ export async function solve(
   opts: SolveOptions = {},
 ): Promise<BoardSolveResult> {
   const started = performance.now()
-  const mode: OptimizerMode = opts.mode ?? 'full'
   const mountKey: MountKey = opts.mountKey ?? DEFAULT_MOUNT_KEY
   const mount = MOUNTS[mountKey]
   const cols = mount.cols
@@ -105,7 +88,6 @@ export async function solve(
     ? []
     : mount.lineBonusTiers
   const mountLevel: MountLevel = opts.mountLevel ?? 0
-  const tolerance = opts.normalToleranceEps ?? DEFAULT_NORMAL_TOLERANCE
   const pieceBuffMultiplier = opts.pieceBuffMultiplier ?? 1
   const deadline =
     opts.timeBudgetMs != null ? started + opts.timeBudgetMs : Infinity
@@ -116,7 +98,6 @@ export async function solve(
   const ctx: SolveContext = {
     inventory,
     currentStats,
-    mode,
     mountKey,
     cols,
     tiers,
@@ -125,7 +106,6 @@ export async function solve(
     maxBonusLines: maxBonusLinesForLevel(mountLevel, tiers),
     geometricMaxPieces,
     totalCells,
-    tolerance,
     deadline,
     started,
     isCancelled: opts.isCancelled,
@@ -152,7 +132,6 @@ export async function solve(
 interface SolveContext {
   inventory: Piece[]
   currentStats: StatTotals
-  mode: OptimizerMode
   mountKey: MountKey
   cols: number
   tiers: LineBonusTier[]
@@ -161,7 +140,6 @@ interface SolveContext {
   maxBonusLines: number
   geometricMaxPieces: number
   totalCells: number
-  tolerance: number
   deadline: number
   started: number
   isCancelled?: () => boolean
@@ -266,8 +244,7 @@ async function solveFullInventory(
   for (const { dist, upperBound: ub } of ranked) {
     if (await maybeYield(ctx)) break
 
-    const minImprovement = ctx.mode === 'normal' ? 1 + ctx.tolerance : 1
-    if (ub <= bestScore * minImprovement) continue
+    if (ub <= bestScore) continue
 
     const tiling = tileDistribution(
       dist,
@@ -417,7 +394,6 @@ function buildResult(
     buffsFromLines,
     linesFilled: lines,
     elapsedMs: 0,
-    mode: ctx.mode,
     mountKey: ctx.mountKey,
     truncated: false,
   }
@@ -434,7 +410,6 @@ function emptyResult(ctx: SolveContext): BoardSolveResult {
     buffsFromLines: zeroStats(),
     linesFilled: 0,
     elapsedMs: 0,
-    mode: ctx.mode,
     mountKey: ctx.mountKey,
     truncated: false,
   }

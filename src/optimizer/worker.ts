@@ -41,7 +41,6 @@ ctx.addEventListener(
         input.currentStats,
         input.mountConfigs,
         {
-          mode: input.mode,
           timeBudgetMs: input.timeBudgetMs,
           isCancelled: () => cancelled,
           onProgress,

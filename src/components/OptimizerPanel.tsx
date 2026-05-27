@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import type { OptimizerMode } from '../data/types'
 import { PanelShell } from './PanelShell'
 
 export interface FullTimeLimit {
@@ -10,8 +9,6 @@ export interface FullTimeLimit {
 export type OptimizeScope = 'allUnlocked' | 'equippedOnly'
 
 interface Props {
-  mode: OptimizerMode
-  onModeChange: (m: OptimizerMode) => void
   running: boolean
   canRun: boolean
   onRun: () => void
@@ -35,11 +32,6 @@ interface Props {
   progressLabel?: string
   statusLabel?: string
 }
-
-const MODES: { key: OptimizerMode; name: string; desc: string }[] = [
-  { key: 'normal', name: 'Normal', desc: 'Likely optimal, restricted search' },
-  { key: 'full', name: 'Full', desc: 'Guaranteed optimal, exhaustive' },
-]
 
 interface BarProps {
   running: boolean
@@ -107,8 +99,6 @@ function ProgressBar({ running, totalMs, exploredCount }: BarProps) {
 }
 
 export function OptimizerPanel({
-  mode,
-  onModeChange,
   running,
   canRun,
   onRun,
@@ -123,10 +113,9 @@ export function OptimizerPanel({
   progressLabel,
   statusLabel,
 }: Props) {
-  const totalMs =
-    mode === 'full' && fullTimeLimit.enabled
-      ? fullTimeLimit.seconds * 1000 * Math.max(1, boardCount)
-      : undefined
+  const totalMs = fullTimeLimit.enabled
+    ? fullTimeLimit.seconds * 1000 * Math.max(1, boardCount)
+    : undefined
 
   return (
     <PanelShell title="Optimizer">
@@ -138,30 +127,85 @@ export function OptimizerPanel({
         )}
       </header>
 
-      <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-end">
-        <div className="flex-1">
-          <div className="text-xs text-gray-400 mb-2">Mode</div>
-          <div className="grid grid-cols-2 gap-2">
-            {MODES.map((m) => (
-              <button
-                key={m.key}
-                type="button"
-                disabled={running}
-                onClick={() => onModeChange(m.key)}
-                aria-pressed={mode === m.key}
-                className={`text-left rounded-md border p-2 transition disabled:opacity-50 ${
-                  mode === m.key
-                    ? 'border-accent bg-[#404458]'
-                    : 'border-[#151922] bg-transparent hover:border-[#151922]'
-                }`}
-              >
-                <div className="text-sm font-semibold text-white">{m.name}</div>
-                <div className="text-[11px] text-gray-400">{m.desc}</div>
-              </button>
-            ))}
+      <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between">
+        <div className="flex flex-col gap-3 min-w-0">
+          {multipleMountsUnlocked && (
+            <div>
+              <div className="text-xs text-gray-400 mb-1.5">Optimize</div>
+              <div className="inline-flex rounded-full border border-bg-line bg-bg-elev p-0.5">
+                <button
+                  type="button"
+                  disabled={running}
+                  onClick={() => onScopeChange('allUnlocked')}
+                  aria-pressed={scope === 'allUnlocked'}
+                  className={`text-xs px-3 py-1 rounded-full transition disabled:opacity-50 ${
+                    scope === 'allUnlocked'
+                      ? 'bg-accent text-bg font-semibold'
+                      : 'text-gray-300 hover:text-white'
+                  }`}
+                >
+                  All unlocked mounts
+                </button>
+                <button
+                  type="button"
+                  disabled={running}
+                  onClick={() => onScopeChange('equippedOnly')}
+                  aria-pressed={scope === 'equippedOnly'}
+                  className={`text-xs px-3 py-1 rounded-full transition disabled:opacity-50 ${
+                    scope === 'equippedOnly'
+                      ? 'bg-accent text-bg font-semibold'
+                      : 'text-gray-300 hover:text-white'
+                  }`}
+                >
+                  Equipped only
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <div className="text-xs text-gray-400 mb-1.5">Time limit</div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-gray-300">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={fullTimeLimit.enabled}
+                  disabled={running}
+                  onChange={(e) =>
+                    onFullTimeLimitChange({
+                      ...fullTimeLimit,
+                      enabled: e.target.checked,
+                    })
+                  }
+                  className="accent-accent"
+                />
+                <span>Limit search</span>
+              </label>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={fullTimeLimit.seconds}
+                disabled={!fullTimeLimit.enabled || running}
+                onChange={(e) => {
+                  const v = Math.max(1, Math.floor(Number(e.target.value) || 0))
+                  onFullTimeLimitChange({ ...fullTimeLimit, seconds: v })
+                }}
+                className="app-input w-20 px-2 py-1 text-xs focus:outline-none focus:border-accent disabled:opacity-50"
+              />
+              <span className="text-gray-500">
+                seconds{boardCount > 1 && ' per board'}
+              </span>
+              {!fullTimeLimit.enabled && (
+                <span className="text-gray-500 italic">
+                  · unlimited (cancel to stop)
+                </span>
+              )}
+            </div>
           </div>
         </div>
-        <div className="flex gap-2">
+
+        <div className="flex gap-2 shrink-0">
           {running ? (
             <button
               type="button"
@@ -182,80 +226,6 @@ export function OptimizerPanel({
           )}
         </div>
       </div>
-
-      {multipleMountsUnlocked && (
-        <div className="mt-3">
-          <div className="text-xs text-gray-400 mb-1.5">Optimize</div>
-          <div className="inline-flex rounded-full border border-bg-line bg-bg-elev p-0.5">
-            <button
-              type="button"
-              disabled={running}
-              onClick={() => onScopeChange('allUnlocked')}
-              aria-pressed={scope === 'allUnlocked'}
-              className={`text-xs px-3 py-1 rounded-full transition disabled:opacity-50 ${
-                scope === 'allUnlocked'
-                  ? 'bg-accent text-bg font-semibold'
-                  : 'text-gray-300 hover:text-white'
-              }`}
-            >
-              All unlocked mounts
-            </button>
-            <button
-              type="button"
-              disabled={running}
-              onClick={() => onScopeChange('equippedOnly')}
-              aria-pressed={scope === 'equippedOnly'}
-              className={`text-xs px-3 py-1 rounded-full transition disabled:opacity-50 ${
-                scope === 'equippedOnly'
-                  ? 'bg-accent text-bg font-semibold'
-                  : 'text-gray-300 hover:text-white'
-              }`}
-            >
-              Equipped only
-            </button>
-          </div>
-        </div>
-      )}
-
-      {mode === 'full' && (
-        <div className="mt-3 flex items-center gap-3 text-xs text-gray-300">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={fullTimeLimit.enabled}
-              disabled={running}
-              onChange={(e) =>
-                onFullTimeLimitChange({
-                  ...fullTimeLimit,
-                  enabled: e.target.checked,
-                })
-              }
-              className="accent-accent"
-            />
-            <span>Time limit</span>
-          </label>
-          <input
-            type="number"
-            min={1}
-            step={1}
-            value={fullTimeLimit.seconds}
-            disabled={!fullTimeLimit.enabled || running}
-            onChange={(e) => {
-              const v = Math.max(1, Math.floor(Number(e.target.value) || 0))
-              onFullTimeLimitChange({ ...fullTimeLimit, seconds: v })
-            }}
-            className="app-input w-20 px-2 py-1 text-xs focus:outline-none focus:border-accent disabled:opacity-50"
-          />
-          <span className="text-gray-500">
-            seconds{boardCount > 1 && ' per board'}
-          </span>
-          {!fullTimeLimit.enabled && (
-            <span className="text-gray-500 italic">
-              · unlimited (cancel to stop)
-            </span>
-          )}
-        </div>
-      )}
 
       <ProgressBar
         running={running}

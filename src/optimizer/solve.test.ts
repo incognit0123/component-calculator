@@ -69,31 +69,13 @@ describe('solve', () => {
     expect(all.size).toBe(inventory.length)
   })
 
-  it('full mode is at least as good as normal mode on a fixture', async () => {
-    const stats = zeroStats()
-    stats.critDamage = 100
-    stats.skillDamage = 50
-    const inventory: Piece[] = [
-      mk('O', 'legend', 'critDamage'),
-      mk('I', 'epicPlus', 'skillDamage'),
-      mk('T', 'epic', 'shieldDamage'),
-      mk('L', 'excellent', 'laceration'),
-      mk('J', 'better', 'toBosses'),
-      mk('O', 'good', 'toWeakened'),
-    ]
-    const full = await solve(inventory, stats, { mode: 'full' })
-    const normal = await solve(inventory, stats, { mode: 'normal' })
-    expect(full.afterScore).toBeGreaterThanOrEqual(normal.afterScore - 1e-9)
-    expect(normal.afterScore).toBeGreaterThanOrEqual(normal.beforeScore)
-  })
-
-  it('full mode finds a valid optimum on a 3-piece fixture', async () => {
+  it('finds a valid optimum on a 3-piece fixture', async () => {
     const inventory: Piece[] = [
       mk('O', 'legend', 'critDamage'),
       mk('O', 'legend', 'skillDamage'),
       mk('O', 'good', 'shieldDamage'),
     ]
-    const result = await solve(inventory, zeroStats(), { mode: 'full' })
+    const result = await solve(inventory, zeroStats())
     expect(result.placements.length).toBe(3)
     expect(result.linesFilled).toBe(0)
     expect(result.afterScore).toBeCloseTo(1.33 * 1.42 * 1.05, 8)
@@ -123,7 +105,7 @@ describe('solve', () => {
       )
     }
     const t0 = performance.now()
-    const result = await solve(inventory, zeroStats(), { mode: 'full' })
+    const result = await solve(inventory, zeroStats())
     const elapsed = performance.now() - t0
     expect(result.placements.length).toBeGreaterThan(0)
     expect(result.afterScore).toBeGreaterThan(result.beforeScore)
@@ -135,14 +117,8 @@ describe('solve', () => {
     for (let i = 0; i < 18; i++) {
       inventory.push(mk('O', 'legend', 'critDamage'))
     }
-    const lvl0 = await solve(inventory, zeroStats(), {
-      mode: 'full',
-      mountLevel: 0,
-    })
-    const lvl8 = await solve(inventory, zeroStats(), {
-      mode: 'full',
-      mountLevel: 8,
-    })
+    const lvl0 = await solve(inventory, zeroStats(), { mountLevel: 0 })
+    const lvl8 = await solve(inventory, zeroStats(), { mountLevel: 8 })
     expect(lvl8.afterScore).toBeGreaterThanOrEqual(lvl0.afterScore - 1e-9)
   })
 
@@ -150,10 +126,7 @@ describe('solve', () => {
     const inventory: Piece[] = []
     for (let i = 0; i < 14; i++) inventory.push(mk('I', 'legend', 'critDamage'))
 
-    const lvl8 = await solve(inventory, zeroStats(), {
-      mode: 'full',
-      mountLevel: 8,
-    })
+    const lvl8 = await solve(inventory, zeroStats(), { mountLevel: 8 })
     expect(lvl8.linesFilled).toBeGreaterThanOrEqual(0)
     if (lvl8.linesFilled >= 5) {
       expect(lvl8.buffsFromLines.laceration).toBeGreaterThan(0)
@@ -167,10 +140,8 @@ describe('solve', () => {
     }
     let calls = 0
     const result = await solve(inventory, zeroStats(), {
-      mode: 'full',
       isCancelled: () => ++calls > 2,
     })
-    expect(result.mode).toBe('full')
     expect(typeof result.afterScore).toBe('number')
   })
 
@@ -179,12 +150,10 @@ describe('solve', () => {
     for (let i = 0; i < 24; i++) inventory.push(mk('I', 'legend', 'toPoisoned'))
 
     const es = await solve(inventory, zeroStats(), {
-      mode: 'normal',
       mountKey: 'electricScooter',
       mountLevel: 0,
     })
     const ds = await solve(inventory, zeroStats(), {
-      mode: 'normal',
       mountKey: 'doomsteed',
       mountLevel: 0,
     })
@@ -202,7 +171,6 @@ describe('solve', () => {
     for (let i = 0; i < 24; i++) inventory.push(mk('I', 'legend', 'toPoisoned'))
 
     const result = await solve(inventory, zeroStats(), {
-      mode: 'normal',
       mountKey: 'doomsteed',
       mountLevel: 8,
     })

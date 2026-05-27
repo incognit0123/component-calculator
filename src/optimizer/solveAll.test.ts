@@ -60,7 +60,6 @@ describe('solveAll', () => {
         equippedScooter,
         { mountKey: 'techHoverboard', mountLevel: 0, isEquipped: false },
       ],
-      { mode: 'normal' },
     )
     expect(result.boards.length).toBe(2)
     expect(result.boards[0].isEquipped).toBe(true)
@@ -89,7 +88,6 @@ describe('solveAll', () => {
         { mountKey: 'techHoverboard', mountLevel: 0, isEquipped: false },
         { mountKey: 'doomsteed', mountLevel: 0, isEquipped: false },
       ],
-      { mode: 'normal' },
     )
     expect(result.boards.length).toBe(3)
     expect(result.boards[0].mountKey).toBe('electricScooter')
@@ -111,7 +109,6 @@ describe('solveAll', () => {
         equippedDoomsteed,
         { mountKey: 'electricScooter', mountLevel: 0, isEquipped: false },
       ],
-      { mode: 'normal' },
     )
     const ne = result.boards.find((b) => !b.isEquipped)!
     expect(ne.placements.length).toBeGreaterThan(0)
@@ -130,7 +127,6 @@ describe('solveAll', () => {
         equippedScooter,
         { mountKey: 'techHoverboard', mountLevel: 0, isEquipped: false },
       ],
-      { mode: 'normal' },
     )
     const eq = result.boards.find((b) => b.isEquipped)!
     const ne = result.boards.find((b) => !b.isEquipped)!
@@ -181,7 +177,7 @@ describe('solveAll', () => {
         equippedScooter,
         { mountKey: 'techHoverboard', mountLevel: 0, isEquipped: false },
       ],
-      { mode: 'normal', timeBudgetMs: 42 },
+      { timeBudgetMs: 42 },
     )
 
     expect(calls.length).toBe(2)

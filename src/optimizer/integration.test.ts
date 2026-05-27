@@ -13,7 +13,7 @@ function mkPiece(
 }
 
 describe('optimizer integration', () => {
-  it('full >= normal >= baseline on a fixture', { timeout: 30000 }, async () => {
+  it('result >= baseline on a fixture', { timeout: 30000 }, async () => {
     const currentStats = zeroStats()
     currentStats.critDamage = 100
     currentStats.skillDamage = 50
@@ -27,28 +27,22 @@ describe('optimizer integration', () => {
       mkPiece('f', 'O', 'good', 'toWeakened'),
     ]
 
-    const full = await solve(pieces, currentStats, { mode: 'full' })
-    const normal = await solve(pieces, currentStats, { mode: 'normal' })
-
-    expect(normal.afterScore).toBeGreaterThanOrEqual(normal.beforeScore)
-    expect(full.afterScore).toBeGreaterThanOrEqual(full.beforeScore)
-
-    const eps = 1e-9
-    expect(full.afterScore + eps).toBeGreaterThanOrEqual(normal.afterScore)
+    const result = await solve(pieces, currentStats)
+    expect(result.afterScore).toBeGreaterThanOrEqual(result.beforeScore)
   })
 
-  it('full mode finds the optimum on a tiny fixture', async () => {
+  it('finds the optimum on a tiny fixture', async () => {
     const currentStats = zeroStats()
     const pieces: Piece[] = [
       mkPiece('a', 'O', 'legend', 'critDamage'),
       mkPiece('b', 'O', 'legend', 'skillDamage'),
       mkPiece('c', 'O', 'good', 'shieldDamage'),
     ]
-    const full = await solve(pieces, currentStats, { mode: 'full' })
+    const result = await solve(pieces, currentStats)
     // All three pieces fit, no full rows. Expected score:
     // (1 + 33/100) * (1 + 42/100) * (1 + 5/100) = 1.33 * 1.42 * 1.05
-    expect(full.afterScore).toBeCloseTo(1.33 * 1.42 * 1.05, 8)
-    expect(full.placements.length).toBe(3)
+    expect(result.afterScore).toBeCloseTo(1.33 * 1.42 * 1.05, 8)
+    expect(result.placements.length).toBe(3)
   })
 
   it('placed + unused pieces partition the inventory', async () => {
@@ -59,10 +53,9 @@ describe('optimizer integration', () => {
       mkPiece('d', 'O', 'good', 'laceration'),
       mkPiece('e', 'O', 'good', 'toBosses'),
     ]
-    const result = await solve(pieces, zeroStats(), { mode: 'normal' })
+    const result = await solve(pieces, zeroStats())
     const placedIds = new Set(result.placements.map((p) => p.pieceId))
     const allReportedIds = new Set([...placedIds, ...result.unusedPieceIds])
     expect(allReportedIds.size).toBe(pieces.length)
-    expect(result.mode).toBe('normal')
   })
 })

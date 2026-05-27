@@ -1,6 +1,6 @@
 import type { MountLevel } from '../data/lineBonuses'
 import type { MountKey } from '../data/mounts'
-import type { Piece, StatTotals, OptimizerMode } from '../data/types'
+import type { Piece, StatTotals } from '../data/types'
 
 export const BOARD_ROWS = 8
 
@@ -35,7 +35,6 @@ export interface BoardSolveResult {
   buffsFromLines: StatTotals
   linesFilled: number
   elapsedMs: number
-  mode: OptimizerMode
   mountKey: MountKey
   truncated: boolean
 }
@@ -68,7 +67,6 @@ export interface MountConfig {
 export interface OptimizerInput {
   currentStats: StatTotals
   pieces: Piece[]
-  mode: OptimizerMode
   /**
    * Every mount whose board the player wants the optimizer to fill. Exactly
    * one entry must have `isEquipped: true`. Order is irrelevant — `solveAll`
@@ -91,7 +89,6 @@ export interface OptimizerResult {
   /** formula(stats accumulated across every board, scaled per sync rate). */
   afterScore: number
   elapsedMs: number
-  mode: OptimizerMode
   truncated: boolean
 }
 

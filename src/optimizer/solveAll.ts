@@ -1,6 +1,6 @@
 import { syncRateFor, type MountKey } from '../data/mounts'
 import { STAT_KEYS, zeroStats } from '../data/stats'
-import type { OptimizerMode, Piece, StatKey, StatTotals } from '../data/types'
+import type { Piece, StatKey, StatTotals } from '../data/types'
 import { addPieceBuffs, cloneStats, formula } from './scoring'
 import { solve } from './solve'
 import type {
@@ -11,7 +11,6 @@ import type {
 } from './types'
 
 export interface SolveAllOptions {
-  mode?: OptimizerMode
   isCancelled?: () => boolean
   /**
    * Reports best-so-far across the orchestration. `currentMountKey` is the
@@ -28,7 +27,6 @@ export interface SolveAllOptions {
    * against board 2 with another full `timeBudgetMs`, and so on.
    */
   timeBudgetMs?: number
-  normalToleranceEps?: number
 }
 
 /**
@@ -56,7 +54,6 @@ export async function solveAll(
   opts: SolveAllOptions = {},
 ): Promise<OptimizerResult> {
   const started = performance.now()
-  const mode = opts.mode ?? 'full'
 
   const equipped = mountConfigs.find((c) => c.isEquipped)
   if (!equipped) {
@@ -103,7 +100,6 @@ export async function solveAll(
           const partial = aggregate(
             [...boards, partialBoard],
             equipped.mountKey,
-            mode,
             currentStats,
             // Unused-after-current = current board's leftover. Subsequent
             // boards haven't run yet so we can't predict their leftover.
@@ -116,7 +112,6 @@ export async function solveAll(
       : undefined
 
     const solved = await solve(remainingInventory, runningStats, {
-      mode,
       mountKey: config.mountKey,
       mountLevel: config.mountLevel,
       pieceBuffMultiplier: multiplier,
@@ -124,7 +119,6 @@ export async function solveAll(
       timeBudgetMs: opts.timeBudgetMs,
       isCancelled: opts.isCancelled,
       onProgress: onBoardProgress,
-      normalToleranceEps: opts.normalToleranceEps,
     })
 
     if (solved.truncated) truncated = true
@@ -154,7 +148,6 @@ export async function solveAll(
     beforeScore,
     afterScore,
     elapsedMs: performance.now() - started,
-    mode,
     truncated,
   }
 }
@@ -194,7 +187,6 @@ function makeBoardResult(
 function aggregate(
   boards: BoardResult[],
   equippedMountKey: MountKey,
-  mode: OptimizerMode,
   initialStats: StatTotals,
   unusedPieceIds: string[],
   truncated: boolean,
@@ -217,7 +209,6 @@ function aggregate(
     beforeScore: formula(initialStats),
     afterScore: formula(stats),
     elapsedMs,
-    mode,
     truncated,
   }
 }
