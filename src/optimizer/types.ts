@@ -56,6 +56,12 @@ export interface BoardResult {
   /** Line-bonus contributions. Zero for non-equipped (no line bonuses there). */
   buffsFromLines: StatTotals
   linesFilled: number
+  /**
+   * True when this board's solve was cut off by the time budget. Combined with
+   * an empty `placements` list it means the limit was too low to find any
+   * layout for this board (the UI surfaces a "raise the time limit" warning).
+   */
+  truncated?: boolean
 }
 
 export interface MountConfig {

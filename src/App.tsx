@@ -726,6 +726,16 @@ export default function App() {
 
   const displayedMount = displayedBoard ? MOUNTS[displayedBoard.mountKey] : null
 
+  // Boards the time limit was too low to find *any* layout for (cut off before
+  // placing a single piece). Only meaningful on the final result — while the
+  // optimizer is still running, not-yet-solved boards are legitimately empty.
+  const timedOutBoards = useMemo(() => {
+    if (!result || status.running) return []
+    return result.boards.filter(
+      (b) => b.truncated && b.placements.length === 0,
+    )
+  }, [result, status.running])
+
   // Stats-summary tab data for the active tab.
   const statsViewProps = useMemo(() => {
     if (!result) return null
@@ -1052,6 +1062,21 @@ export default function App() {
                 {status.running && (
                   <div className="text-xs text-accent italic">
                     Preliminary result (still working)…
+                  </div>
+                )}
+                {timedOutBoards.length > 0 && (
+                  <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                    <span className="font-semibold">
+                      Time limit too low for{' '}
+                      {timedOutBoards
+                        .map((b) => MOUNTS[b.mountKey].name)
+                        .join(', ')}
+                      .
+                    </span>{' '}
+                    No layout could be found in the allotted time — the{' '}
+                    {timedOutBoards.length === 1 ? 'board' : 'boards'} above{' '}
+                    {timedOutBoards.length === 1 ? 'is' : 'are'} empty. Raise the
+                    time limit (or turn it off) and run again.
                   </div>
                 )}
                 <header className="flex items-center justify-between gap-4">

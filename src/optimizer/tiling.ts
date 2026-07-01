@@ -80,6 +80,24 @@ export function enumerateDistributions(
   return out
 }
 
+/**
+ * Necessary condition for `dist` to tile the board with **zero empty cells**
+ * (a full board). Under a checkerboard coloring, an 8×cols board splits into
+ * equal black/white halves; every tetromino except T covers 2 black + 2 white,
+ * while each T covers 3 of one color and 1 of the other (imbalance ±2). For the
+ * imbalances to cancel to zero, the number of T pieces must be even. This only
+ * applies when the distribution fills the whole board — with empty cells the
+ * color balance no longer forces even T, so we return true (filter inapplicable).
+ *
+ * Proven necessary (not sufficient): a `true` result means "not ruled out"; a
+ * `false` result means "provably cannot fully tile", so skipping it loses no
+ * optimal solution.
+ */
+export function fullBoardTilingPossible(dist: ShapeCounts, cols: number): boolean {
+  if (totalShapeCells(dist) !== boardBits(cols)) return true
+  return dist.T % 2 === 0
+}
+
 function lowestBitIndex(mask: bigint): number {
   if (mask === 0n) return -1
   let idx = 0
@@ -142,14 +160,35 @@ function placementsByLowestCell(
  */
 const TILE_NODE_BUDGET = 200_000
 
+/** How often (in DFS nodes) to poll the wall clock for the deadline. */
+const DEADLINE_CHECK_INTERVAL = 4096
+
+export interface TileOptions {
+  /**
+   * Abort the search once `performance.now()` passes this timestamp, returning
+   * the best tiling found so far (or null). Lets a single call respect the
+   * solver's overall time budget instead of running to its node budget.
+   */
+  deadline?: number
+  /** Override the default per-call DFS node budget. */
+  nodeBudget?: number
+}
+
 export function tileDistribution(
   dist: ShapeCounts,
   cols: number,
   targetLines: number = BOARD_ROWS,
+  opts: TileOptions = {},
 ): TilingResult | null {
   const cellsToPlace = totalShapeCells(dist)
   const totalCells = boardBits(cols)
   if (cellsToPlace > totalCells) return null
+
+  // Provable infeasibility skip: a full board with an odd T-count can't tile.
+  if (!fullBoardTilingPossible(dist, cols)) return null
+
+  const nodeBudget = opts.nodeBudget ?? TILE_NODE_BUDGET
+  const deadline = opts.deadline ?? Infinity
 
   const geometricMaxLines = Math.floor(cellsToPlace / cols)
   const effectiveTarget = Math.min(targetLines, geometricMaxLines)
@@ -199,7 +238,15 @@ export function tileDistribution(
 
   function dfs(occ: bigint, fromIdx: number, remainingCells: number): void {
     if (stop) return
-    if (++nodes > TILE_NODE_BUDGET) {
+    if (++nodes > nodeBudget) {
+      stop = true
+      return
+    }
+    if (
+      deadline !== Infinity &&
+      nodes % DEADLINE_CHECK_INTERVAL === 0 &&
+      performance.now() > deadline
+    ) {
       stop = true
       return
     }

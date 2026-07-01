@@ -230,6 +230,7 @@ function makeBoardResult(
     buffsFromPieces: unscaledBuffs,
     buffsFromLines: solved.buffsFromLines,
     linesFilled: solved.linesFilled,
+    truncated: solved.truncated,
   }
 }
 

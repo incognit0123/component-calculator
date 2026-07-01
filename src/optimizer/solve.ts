@@ -194,7 +194,9 @@ async function solveSmallInventory(ctx: SolveContext): Promise<BoardSolveResult>
     ctx.maxBonusLines,
     ctx.cols,
   )
-  const tiling = tileDistribution(fullDist, ctx.cols, target)
+  const tiling = tileDistribution(fullDist, ctx.cols, target, {
+    deadline: ctx.deadline,
+  })
   if (tiling) {
     return buildResult(
       ctx,
@@ -214,6 +216,7 @@ async function solveSmallInventory(ctx: SolveContext): Promise<BoardSolveResult>
       droppedDist,
       ctx.cols,
       effectiveLineTarget(totalShapeCells(droppedDist), ctx.maxBonusLines, ctx.cols),
+      { deadline: ctx.deadline },
     )
     if (!droppedTiling) continue
     const result = buildResult(
@@ -248,6 +251,10 @@ async function solveFullInventory(
 
   const ranked = distributions.map((dist) => ({
     dist,
+    // A full board (every cell covered) forces an exact-cover tiling, which is
+    // rarely feasible and expensive to attempt. Near-full distributions tile
+    // quickly, so we evaluate those first (see sort below).
+    full: totalShapeCells(dist) === ctx.totalCells,
     upperBound: distributionUpperBound(
       piecesByShape,
       dist,
@@ -259,7 +266,17 @@ async function solveFullInventory(
       ctx.pieceBuffMultiplier,
     ),
   }))
-  ranked.sort((a, b) => b.upperBound - a.upperBound)
+  // Process easily-tileable (non-full-board) distributions first, highest upper
+  // bound within each group. This finds a near-optimal `best` within the first
+  // few tilings, which then prunes the vast majority of full-board candidates
+  // via their upper bound — instead of burning the whole time budget proving
+  // full-board tilings infeasible before any layout is found. Ordering only
+  // affects pruning efficiency: the loop below evaluates every non-pruned
+  // distribution regardless of order, so the exact optimum is preserved.
+  ranked.sort((a, b) => {
+    if (a.full !== b.full) return a.full ? 1 : -1
+    return b.upperBound - a.upperBound
+  })
 
   ctx.distTotal = ranked.length
   ctx.distProcessed = 0
@@ -281,6 +298,7 @@ async function solveFullInventory(
       dist,
       ctx.cols,
       effectiveLineTarget(totalShapeCells(dist), ctx.maxBonusLines, ctx.cols),
+      { deadline: ctx.deadline },
     )
     if (!tiling) {
       maybeProgress(ctx)

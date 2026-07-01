@@ -6,6 +6,7 @@ import { BOARD_ROWS } from './types'
 import {
   emptyShapeCounts,
   enumerateDistributions,
+  fullBoardTilingPossible,
   inventoryShapeCounts,
   SHAPE_CELLS,
   tileDistribution,
@@ -177,5 +178,28 @@ describe('tileDistribution (wider boards)', () => {
 
   it('Doomsteed rejects 25 I-pieces (overflows 96 cells)', () => {
     expect(tileDistribution(counts({ I: 25 }), DS_COLS)).toBeNull()
+  })
+})
+
+describe('fullBoardTilingPossible (checkerboard T-parity)', () => {
+  it('rejects a full board with an odd T-count', () => {
+    // 21 T + 3 I = 24 pieces = 96 cells (full board), odd T ⇒ provably untileable.
+    const dist = counts({ T: 21, I: 3 })
+    expect(totalShapeCells(dist)).toBe(boardBits(DS_COLS))
+    expect(fullBoardTilingPossible(dist, DS_COLS)).toBe(false)
+    expect(tileDistribution(dist, DS_COLS, 4)).toBeNull()
+  })
+
+  it('allows a full board with an even T-count', () => {
+    const dist = counts({ T: 20, I: 4 })
+    expect(totalShapeCells(dist)).toBe(boardBits(DS_COLS))
+    expect(fullBoardTilingPossible(dist, DS_COLS)).toBe(true)
+  })
+
+  it('does not apply the parity rule when cells are left empty', () => {
+    // 21 T = 84 cells on a 96-cell board (12 empty) — parity argument N/A.
+    const dist = counts({ T: 21 })
+    expect(totalShapeCells(dist)).toBeLessThan(boardBits(DS_COLS))
+    expect(fullBoardTilingPossible(dist, DS_COLS)).toBe(true)
   })
 })
