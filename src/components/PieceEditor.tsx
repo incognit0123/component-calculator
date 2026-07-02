@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Check } from 'lucide-react'
 import { BUFF_TABLE } from '../data/buffTable'
 import { QUALITIES, QUALITY_META } from '../data/qualities'
 import { SHAPE_KEYS } from '../data/shapes'
@@ -17,7 +18,7 @@ interface Props {
   open: boolean
   initial?: Piece | null
   onClose: () => void
-  onSave: (draft: Omit<Piece, 'id'>) => void
+  onSave: (draft: Omit<Piece, 'id'>, keepOpen: boolean) => void
 }
 
 export function PieceEditor({ open, initial, onClose, onSave }: Props) {
@@ -26,6 +27,9 @@ export function PieceEditor({ open, initial, onClose, onSave }: Props) {
     initial?.quality ?? 'good',
   )
   const [stat, setStat] = useState<StatKey>(initial?.stat ?? 'critDamage')
+  const [keepOpen, setKeepOpen] = useState(false)
+  const [showAdded, setShowAdded] = useState(false)
+  const addedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -33,6 +37,28 @@ export function PieceEditor({ open, initial, onClose, onSave }: Props) {
     setQuality(initial?.quality ?? 'good')
     setStat(initial?.stat ?? 'critDamage')
   }, [open, initial])
+
+  // Clear the "Added" confirmation whenever the editor closes, and tidy up
+  // the pending timeout on unmount.
+  useEffect(() => {
+    if (!open) setShowAdded(false)
+  }, [open])
+  useEffect(
+    () => () => {
+      if (addedTimeout.current) clearTimeout(addedTimeout.current)
+    },
+    [],
+  )
+
+  const handleAdd = () => {
+    const stayOpen = !initial && keepOpen
+    onSave({ shape, quality, stat }, stayOpen)
+    if (stayOpen) {
+      setShowAdded(true)
+      if (addedTimeout.current) clearTimeout(addedTimeout.current)
+      addedTimeout.current = setTimeout(() => setShowAdded(false), 1500)
+    }
+  }
 
   if (!open) return null
 
@@ -56,14 +82,38 @@ export function PieceEditor({ open, initial, onClose, onSave }: Props) {
           <h3 className="text-lg font-semibold text-white">
             {initial ? 'Edit piece' : 'Add piece'}
           </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-gray-400 hover:text-white"
-            aria-label="Close"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-3">
+            {!initial && (
+              <button
+                type="button"
+                onClick={() => setKeepOpen((v) => !v)}
+                role="switch"
+                aria-checked={keepOpen}
+                className="flex items-center gap-2 text-xs text-gray-300 hover:text-white"
+              >
+                Keep open
+                <span
+                  className={`relative inline-flex h-4 w-7 items-center rounded-full transition ${
+                    keepOpen ? 'bg-accent' : 'bg-bg-line'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3 w-3 rounded-full bg-white transition-transform ${
+                      keepOpen ? 'translate-x-3.5' : 'translate-x-0.5'
+                    }`}
+                  />
+                </span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-gray-400 hover:text-white"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         <fieldset className="flex flex-col gap-2">
@@ -151,21 +201,36 @@ export function PieceEditor({ open, initial, onClose, onSave }: Props) {
           </div>
         </div>
 
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 rounded-md border border-bg-line text-gray-300 hover:text-white hover:bg-bg-elev"
+        <div className="flex items-center justify-between gap-2">
+          <span
+            className={`flex items-center gap-1.5 text-sm font-medium text-green-400 transition-opacity duration-200 ${
+              showAdded ? 'opacity-100' : 'opacity-0'
+            }`}
+            aria-live="polite"
           >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => onSave({ shape, quality, stat })}
-            className="px-3 py-1.5 rounded-md bg-accent text-white font-semibold hover:bg-accent/90"
-          >
-            {initial ? 'Save' : 'Add'}
-          </button>
+            {showAdded && (
+              <>
+                Added
+                <Check size={16} strokeWidth={3} />
+              </>
+            )}
+          </span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1.5 rounded-md border border-bg-line text-gray-300 hover:text-white hover:bg-bg-elev"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleAdd}
+              className="px-3 py-1.5 rounded-md bg-accent text-white font-semibold hover:bg-accent/90"
+            >
+              {initial ? 'Save' : 'Add'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

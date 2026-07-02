@@ -109,13 +109,13 @@ export function PieceInventory({
     setEditorOpen(true)
   }
 
-  const handleSave = (draft: Omit<Piece, 'id'>) => {
+  const handleSave = (draft: Omit<Piece, 'id'>, keepOpen: boolean) => {
     if (editing) {
       onChange(pieces.map((p) => (p.id === editing.id ? { ...editing, ...draft } : p)))
     } else {
       onChange([...pieces, { id: uuid(), ...draft }])
     }
-    setEditorOpen(false)
+    if (!keepOpen) setEditorOpen(false)
   }
 
   const handleDelete = (id: string) =>
