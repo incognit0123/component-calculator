@@ -251,10 +251,6 @@ async function solveFullInventory(
 
   const ranked = distributions.map((dist) => ({
     dist,
-    // A full board (every cell covered) forces an exact-cover tiling, which is
-    // rarely feasible and expensive to attempt. Near-full distributions tile
-    // quickly, so we evaluate those first (see sort below).
-    full: totalShapeCells(dist) === ctx.totalCells,
     upperBound: distributionUpperBound(
       piecesByShape,
       dist,
@@ -266,17 +262,18 @@ async function solveFullInventory(
       ctx.pieceBuffMultiplier,
     ),
   }))
-  // Process easily-tileable (non-full-board) distributions first, highest upper
-  // bound within each group. This finds a near-optimal `best` within the first
-  // few tilings, which then prunes the vast majority of full-board candidates
-  // via their upper bound — instead of burning the whole time budget proving
-  // full-board tilings infeasible before any layout is found. Ordering only
-  // affects pruning efficiency: the loop below evaluates every non-pruned
-  // distribution regardless of order, so the exact optimum is preserved.
-  ranked.sort((a, b) => {
-    if (a.full !== b.full) return a.full ? 1 : -1
-    return b.upperBound - a.upperBound
-  })
+  // Rank by descending upper bound. The optimum almost always lives at the
+  // largest (full-board) piece count — adding any piece strictly improves the
+  // score — and those distributions carry the highest bounds, so they're
+  // evaluated first. Finding the true optimum early then upper-bound-prunes the
+  // vast majority of smaller (G-1/G-2) distributions with no tiling attempt.
+  //
+  // This relies on the MRV tiler resolving each distribution (feasible or not)
+  // in ~milliseconds; with the old tiler, full boards took ~341ms each to
+  // attempt/disprove, so bound-first ordering spent the whole budget failing to
+  // tile full boards before placing a single piece (the empty-board bug). If
+  // the tiler ever regresses to that cost, this ordering would need to change.
+  ranked.sort((a, b) => b.upperBound - a.upperBound)
 
   ctx.distTotal = ranked.length
   ctx.distProcessed = 0

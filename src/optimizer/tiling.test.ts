@@ -181,6 +181,68 @@ describe('tileDistribution (wider boards)', () => {
   })
 })
 
+describe('tileDistribution (partial boards leave cells empty)', () => {
+  // Validates a tiling's slots are mutually non-overlapping, union to the
+  // reported mask, and honor the requested per-shape counts.
+  function assertLegal(result: NonNullable<ReturnType<typeof tileDistribution>>, dist: ShapeCounts) {
+    let union = 0n
+    for (const s of result.slots) {
+      expect(union & s.mask).toBe(0n) // no overlap
+      union |= s.mask
+    }
+    expect(union).toBe(result.mask)
+    const observed = inventoryShapeCounts(
+      result.slots.map((s, i) => ({
+        id: String(i),
+        shape: s.shape,
+        quality: 'good' as const,
+        stat: 'critDamage' as const,
+      })),
+    )
+    expect(observed).toEqual(dist)
+  }
+
+  it('Doomsteed tiles 23 I-pieces (4 cells empty) to 7 lines', () => {
+    const dist = counts({ I: 23 })
+    expect(totalShapeCells(dist)).toBe(boardBits(DS_COLS) - 4)
+    const result = tileDistribution(dist, DS_COLS)
+    expect(result).not.toBeNull()
+    expect(result!.slots.length).toBe(23)
+    expect(result!.lines).toBe(BOARD_ROWS - 1)
+    assertLegal(result!, dist)
+  })
+
+  it('Doomsteed tiles a mixed 22-piece distribution legally, leaving 8 cells empty', () => {
+    const dist = counts({ O: 6, I: 6, T: 4, L: 3, J: 3 }) // 22 pieces = 88 cells
+    expect(totalShapeCells(dist)).toBe(boardBits(DS_COLS) - 8)
+    const result = tileDistribution(dist, DS_COLS)
+    expect(result).not.toBeNull()
+    expect(result!.slots.length).toBe(22)
+    assertLegal(result!, dist)
+  })
+
+  it('respects the empty-cell budget: never leaves more cells empty than required', () => {
+    // 20 pieces = 80 cells on a 96-cell board ⇒ exactly 16 cells must be empty.
+    const dist = counts({ O: 5, I: 5, T: 4, L: 3, J: 3 })
+    const result = tileDistribution(dist, DS_COLS)
+    expect(result).not.toBeNull()
+    expect(popcount(result!.mask)).toBe(totalShapeCells(dist))
+  })
+
+  it('line-maximizes a mixed distribution: 6 O + 12 I reaches its 6-line ceiling', () => {
+    // 6 O fill two full rows (24 cells); 12 horizontal I fill four more (48
+    // cells). 72 cells on a 96-cell board ⇒ geometric ceiling of 6 lines, which
+    // this mix can achieve — so the line-maximizing tiler must return exactly 6.
+    const dist = counts({ O: 6, I: 12 })
+    expect(totalShapeCells(dist)).toBe(72)
+    const result = tileDistribution(dist, DS_COLS)
+    expect(result).not.toBeNull()
+    expect(result!.slots.length).toBe(18)
+    expect(result!.lines).toBe(6)
+    assertLegal(result!, dist)
+  })
+})
+
 describe('fullBoardTilingPossible (checkerboard T-parity)', () => {
   it('rejects a full board with an odd T-count', () => {
     // 21 T + 3 I = 24 pieces = 96 cells (full board), odd T ⇒ provably untileable.

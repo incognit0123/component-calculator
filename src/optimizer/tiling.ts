@@ -98,41 +98,51 @@ export function fullBoardTilingPossible(dist: ShapeCounts, cols: number): boolea
   return dist.T % 2 === 0
 }
 
-function lowestBitIndex(mask: bigint): number {
-  if (mask === 0n) return -1
-  let idx = 0
-  let m = mask
-  while ((m & 1n) === 0n) {
-    m >>= 1n
-    idx++
-  }
-  return idx
+const CELL_BIT_MASKS: Map<number, bigint[]> = new Map()
+
+/** Precomputed `1n << cell` for every cell of a `cols`-wide board. */
+function cellBitMasks(cols: number): bigint[] {
+  const cached = CELL_BIT_MASKS.get(cols)
+  if (cached) return cached
+  const n = boardBits(cols)
+  const arr: bigint[] = new Array(n)
+  for (let i = 0; i < n; i++) arr[i] = 1n << BigInt(i)
+  CELL_BIT_MASKS.set(cols, arr)
+  return arr
 }
 
-const PLACEMENTS_BY_LOWEST_CELL: Map<
+const PLACEMENTS_COVERING_CELL: Map<
   string,
   Map<number, ShapePlacement[]>
 > = new Map()
 
-/** Index of placements by the cell index of their lowest set bit, per cols. */
-function placementsByLowestCell(
+/**
+ * Index of placements by **every** cell index they cover, per cols. Lets the
+ * MRV exact-cover search branch on an arbitrary target cell (the most
+ * constrained one) rather than always the lowest empty one.
+ */
+function placementsCoveringCell(
   shape: ShapeKey,
   cols: number,
 ): Map<number, ShapePlacement[]> {
   const cacheKey = `${shape}|${cols}`
-  const cached = PLACEMENTS_BY_LOWEST_CELL.get(cacheKey)
+  const cached = PLACEMENTS_COVERING_CELL.get(cacheKey)
   if (cached) return cached
   const map = new Map<number, ShapePlacement[]>()
+  const masks = cellBitMasks(cols)
   for (const pl of placementsForShape(shape, cols)) {
-    const low = lowestBitIndex(pl.mask)
-    let list = map.get(low)
-    if (!list) {
-      list = []
-      map.set(low, list)
+    for (let cell = 0; cell < masks.length; cell++) {
+      if ((pl.mask & masks[cell]) !== 0n) {
+        let list = map.get(cell)
+        if (!list) {
+          list = []
+          map.set(cell, list)
+        }
+        list.push(pl)
+      }
     }
-    list.push(pl)
   }
-  PLACEMENTS_BY_LOWEST_CELL.set(cacheKey, map)
+  PLACEMENTS_COVERING_CELL.set(cacheKey, map)
   return map
 }
 
@@ -147,10 +157,15 @@ function placementsByLowestCell(
  * turns out to be unreachable due to shape constraints, the search degrades
  * to returning the best tiling actually found.
  *
- * Search order: at each step, address the lowest-indexed empty cell and
- * either place a piece covering it, or (if there are still more empty cells
- * available than pieces remaining) leave it empty. This visits each distinct
- * tiling exactly once.
+ * Search order: an Algorithm-X-style exact-cover DFS with a bounded number of
+ * "leave empty" moves (`emptyBudget = totalCells - cellsToPlace`, so 0 for a
+ * full board). At each node it branches on the **most-constrained** undecided
+ * cell — the one coverable in the fewest ways (counting a leave-empty option
+ * when budget remains) — and dead-ends the instant a cell can be neither
+ * covered nor left empty. This proves infeasibility almost immediately and
+ * reaches a target-line tiling fast; picking the branch cell by constraint
+ * rather than by index preserves completeness (each distinct piece/empty
+ * assignment is still reached exactly once).
  */
 /**
  * Hard cap on DFS recursion calls per `tileDistribution` invocation. Caps
@@ -193,6 +208,8 @@ export function tileDistribution(
   const geometricMaxLines = Math.floor(cellsToPlace / cols)
   const effectiveTarget = Math.min(targetLines, geometricMaxLines)
   const rowMasks = fullRowMasks(cols)
+  const bitMasks = cellBitMasks(cols)
+  const emptyCells = totalCells - cellsToPlace
 
   const remaining: ShapeCounts = { ...dist }
   const slots: SlotPlacement[] = []
@@ -236,7 +253,23 @@ export function tileDistribution(
     return alreadyFull + extra
   }
 
-  function dfs(occ: bigint, fromIdx: number, remainingCells: number): void {
+  /**
+   * MRV exact-cover DFS with a bounded empty-cell budget.
+   *
+   * `occ` — cells covered by placed pieces. `emptyMask` — cells committed as
+   * empty. `remainingCells` — real cells still to place (all pieces placed when
+   * 0). `emptyBudget` — leave-empty moves still allowed.
+   *
+   * At each node we pick the most-constrained undecided cell and branch over
+   * every piece that can cover it, plus (if budget remains) leaving it empty. A
+   * cell with no covering placement and no remaining budget is a dead end.
+   */
+  function dfsCover(
+    occ: bigint,
+    emptyMask: bigint,
+    remainingCells: number,
+    emptyBudget: number,
+  ): void {
     if (stop) return
     if (++nodes > nodeBudget) {
       stop = true
@@ -255,29 +288,48 @@ export function tileDistribution(
       return
     }
 
-    let cellIdx = fromIdx
-    while (cellIdx < totalCells && (occ & (1n << BigInt(cellIdx))) !== 0n) {
-      cellIdx++
-    }
-    if (cellIdx >= totalCells) return
-
-    // Loose feasibility prune: more cells must lie ahead than pieces require.
-    if (totalCells - cellIdx < remainingCells) return
-
-    // Upper-bound prune: if the best line count reachable from here can
-    // neither improve `bestLines` nor reach `effectiveTarget`, skip.
+    // Upper-bound prune: if the best line count reachable from here can neither
+    // improve `bestLines` nor reach `effectiveTarget`, skip. Ignores committed
+    // empties, so it only ever over-estimates — still admissible.
     const ub = maxLinesFromState(occ, remainingCells)
     if (ub <= bestLines && ub < effectiveTarget) return
 
+    const decided = occ | emptyMask
+
+    // MRV: pick the undecided cell with the fewest options (covering placements
+    // plus a leave-empty option when budget remains). Zero options is a dead
+    // end; one option is a forced move (no better cell can exist).
+    let bestCell = -1
+    let bestOptions = Infinity
+    for (let cell = 0; cell < totalCells; cell++) {
+      if ((decided & bitMasks[cell]) !== 0n) continue
+      let count = emptyBudget > 0 ? 1 : 0
+      for (const shape of SHAPE_KEYS) {
+        if (remaining[shape] === 0) continue
+        const pls = placementsCoveringCell(shape, cols).get(cell)
+        if (!pls) continue
+        for (const pl of pls) {
+          if ((decided & pl.mask) === 0n) count++
+        }
+      }
+      if (count === 0) return
+      if (count < bestOptions) {
+        bestOptions = count
+        bestCell = cell
+        if (count === 1) break
+      }
+    }
+
+    // Branch: cover the chosen cell with each legal placement.
     for (const shape of SHAPE_KEYS) {
-      if (stop) return
+      if (stop) break
       if (remaining[shape] === 0) continue
-      const placements = placementsByLowestCell(shape, cols).get(cellIdx)
-      if (!placements) continue
+      const pls = placementsCoveringCell(shape, cols).get(bestCell)
+      if (!pls) continue
       remaining[shape]--
-      for (const pl of placements) {
+      for (const pl of pls) {
         if (stop) break
-        if ((occ & pl.mask) !== 0n) continue
+        if ((decided & pl.mask) !== 0n) continue
         slots.push({
           shape,
           rotation: pl.rotation,
@@ -285,18 +337,23 @@ export function tileDistribution(
           col: pl.col,
           mask: pl.mask,
         })
-        dfs(occ | pl.mask, cellIdx + 1, remainingCells - SHAPE_CELLS[shape])
+        dfsCover(
+          occ | pl.mask,
+          emptyMask,
+          remainingCells - SHAPE_CELLS[shape],
+          emptyBudget,
+        )
         slots.pop()
       }
       remaining[shape]++
     }
 
-    if (stop) return
-    if (totalCells - cellIdx - 1 >= remainingCells) {
-      dfs(occ, cellIdx + 1, remainingCells)
+    // Branch: leave the chosen cell empty (spending one unit of budget).
+    if (!stop && emptyBudget > 0) {
+      dfsCover(occ, emptyMask | bitMasks[bestCell], remainingCells, emptyBudget - 1)
     }
   }
 
-  dfs(0n, 0, cellsToPlace)
+  dfsCover(0n, 0n, cellsToPlace, emptyCells)
   return best
 }
