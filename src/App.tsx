@@ -44,6 +44,7 @@ const EXPORT_PREFIX_V3 = 'mount-opt:v3:'
 const EXPORT_PREFIX_V4 = 'mount-opt:v4:'
 const EXPORT_PREFIX_V5 = 'mount-opt:v5:'
 const EXPORT_PREFIX_V6 = 'mount-opt:v6:'
+const EXPORT_PREFIX_V7 = 'mount-opt:v7:'
 
 type MountLevelMap = Record<MountKey, MountLevel>
 type UnlockedMap = Record<MountKey, boolean>
@@ -65,6 +66,7 @@ type CompactUnlocked = {
   electricScooter: CompactZeroOne
   techHoverboard: CompactZeroOne
   doomsteed: CompactZeroOne
+  netherflameStalker: CompactZeroOne
 }
 
 interface ExportedConfigV6 {
@@ -76,6 +78,16 @@ interface ExportedConfigV6 {
   u: CompactUnlocked
   os: CompactScope
   t: [enabled: 0 | 1, seconds: number]
+}
+
+interface ExportedConfigV7 extends Omit<ExportedConfigV6, 'version' | 'lv'> {
+  version: 7
+  lv: {
+    electricScooter: number
+    techHoverboard: number
+    doomsteed: number
+    netherflameStalker: number
+  }
 }
 
 interface SavedProfile {
@@ -99,8 +111,8 @@ function base64ToBytes(base64: string): Uint8Array {
 }
 
 function encodeConfig(config: ExportedConfig): string {
-  const compact: ExportedConfigV6 = {
-    version: 6,
+  const compact: ExportedConfigV7 = {
+    version: 7,
     s: STAT_KEYS.map((key) => config.currentStats[key]),
     p: config.pieces.map((piece) => [piece.shape, piece.quality, piece.stat]),
     mt: config.selectedMountKey,
@@ -108,18 +120,20 @@ function encodeConfig(config: ExportedConfig): string {
       electricScooter: config.mountLevels.electricScooter,
       techHoverboard: config.mountLevels.techHoverboard,
       doomsteed: config.mountLevels.doomsteed,
+      netherflameStalker: config.mountLevels.netherflameStalker,
     },
     u: {
       electricScooter: config.unlockedMounts.electricScooter ? 1 : 0,
       techHoverboard: config.unlockedMounts.techHoverboard ? 1 : 0,
       doomsteed: config.unlockedMounts.doomsteed ? 1 : 0,
+      netherflameStalker: config.unlockedMounts.netherflameStalker ? 1 : 0,
     },
     os: config.optimizeScope === 'allUnlocked' ? 'a' : 'e',
     t: [config.fullTimeLimit.enabled ? 1 : 0, config.fullTimeLimit.seconds],
   }
   const json = JSON.stringify(compact)
   const base64 = bytesToBase64(new TextEncoder().encode(json))
-  return `${EXPORT_PREFIX_V6}${base64}`
+  return `${EXPORT_PREFIX_V7}${base64}`
 }
 
 function isMountLevel(value: unknown): value is MountLevel {
@@ -135,6 +149,35 @@ function isMountLevelMap(value: unknown): value is MountLevelMap {
   if (typeof value !== 'object' || value == null) return false
   const record = value as Record<string, unknown>
   return MOUNT_KEYS.every((key) => isMountLevel(record[key]))
+}
+
+function isLegacyMountLevelMap(value: unknown): boolean {
+  if (typeof value !== 'object' || value == null) return false
+  const record = value as Record<string, unknown>
+  return ['electricScooter', 'techHoverboard', 'doomsteed'].every((key) =>
+    isMountLevel(record[key]),
+  )
+}
+
+function isLegacyUnlockedMap(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value == null) return false
+  const record = value as Record<string, unknown>
+  return ['electricScooter', 'techHoverboard', 'doomsteed'].every(
+    (key) => record[key] === 0 || record[key] === 1,
+  )
+}
+
+/**
+ * A pre-Netherflame `unlockedMounts` object as persisted to localStorage. Unlike
+ * the export-string form (`isLegacyUnlockedMap`, which uses 0/1), the localStorage
+ * value stores booleans — so migration off it must check for booleans, not 0/1.
+ */
+function isLegacyBooleanUnlockedMap(value: unknown): value is Record<string, boolean> {
+  if (typeof value !== 'object' || value == null) return false
+  const record = value as Record<string, unknown>
+  return ['electricScooter', 'techHoverboard', 'doomsteed'].every(
+    (key) => typeof record[key] === 'boolean',
+  )
 }
 
 function isUnlockedMap(value: unknown): value is UnlockedMap {
@@ -179,7 +222,12 @@ function isFullTimeLimit(value: unknown): value is FullTimeLimit {
 }
 
 function defaultMountLevels(): MountLevelMap {
-  return { electricScooter: 0, techHoverboard: 0, doomsteed: 0 }
+  return {
+    electricScooter: 0,
+    techHoverboard: 0,
+    doomsteed: 0,
+    netherflameStalker: 0,
+  }
 }
 
 /**
@@ -193,6 +241,7 @@ function defaultUnlockedFor(key: MountKey): UnlockedMap {
     electricScooter: key === 'electricScooter',
     techHoverboard: key === 'techHoverboard',
     doomsteed: key === 'doomsteed',
+    netherflameStalker: key === 'netherflameStalker',
   }
 }
 
@@ -201,10 +250,19 @@ function defaultUnlockedFor(key: MountKey): UnlockedMap {
  * key (used pre v4). Called once at module init; if the v4 key already exists,
  * usePersistedState will overwrite this with the saved value.
  */
-function legacySeededMountLevels(): MountLevelMap {
+export function legacySeededMountLevels(): MountLevelMap {
   const out = defaultMountLevels()
   if (typeof window === 'undefined') return out
   try {
+    const saved = window.localStorage.getItem(MOUNT_LEVELS_KEY)
+    if (saved != null) {
+      const parsedSaved = JSON.parse(saved)
+      if (isLegacyMountLevelMap(parsedSaved)) {
+        const migrated = { ...out, ...(parsedSaved as object) } as MountLevelMap
+        window.localStorage.setItem(MOUNT_LEVELS_KEY, JSON.stringify(migrated))
+        return migrated
+      }
+    }
     const raw = window.localStorage.getItem(LEGACY_MOUNT_LEVEL_KEY)
     if (raw == null) return out
     const parsed = JSON.parse(raw)
@@ -220,9 +278,21 @@ function legacySeededMountLevels(): MountLevelMap {
  * localStorage and unlock only that one. Existing single-mount users see no
  * UI change until they explicitly unlock another.
  */
-function legacySeededUnlocked(): UnlockedMap {
+export function legacySeededUnlocked(): UnlockedMap {
   if (typeof window === 'undefined') return defaultUnlockedFor(DEFAULT_MOUNT_KEY)
   try {
+    const saved = window.localStorage.getItem(UNLOCKED_MOUNTS_KEY)
+    if (saved != null) {
+      const parsedSaved = JSON.parse(saved)
+      if (isLegacyBooleanUnlockedMap(parsedSaved)) {
+        const migrated = {
+          ...defaultUnlockedFor(DEFAULT_MOUNT_KEY),
+          ...(parsedSaved as object),
+        } as UnlockedMap
+        window.localStorage.setItem(UNLOCKED_MOUNTS_KEY, JSON.stringify(migrated))
+        return migrated
+      }
+    }
     const raw = window.localStorage.getItem(SELECTED_MOUNT_KEY)
     if (raw == null) return defaultUnlockedFor(DEFAULT_MOUNT_KEY)
     const parsed = JSON.parse(raw)
@@ -317,7 +387,7 @@ function decodeV4Payload(parsed: Record<string, unknown>): ExportedConfig {
     }) &&
     (parsed.m === 'n' || parsed.m === 'f') &&
     isMountKey(parsed.mt) &&
-    isMountLevelMap(parsed.lv) &&
+    isLegacyMountLevelMap(parsed.lv) &&
     Array.isArray(parsed.t) &&
     parsed.t.length === 2 &&
     (parsed.t[0] === 0 || parsed.t[0] === 1) &&
@@ -348,7 +418,7 @@ function decodeV4Payload(parsed: Record<string, unknown>): ExportedConfig {
     currentStats,
     pieces,
     selectedMountKey,
-    mountLevels: parsed.lv as MountLevelMap,
+    mountLevels: { ...defaultMountLevels(), ...(parsed.lv as object) } as MountLevelMap,
     unlockedMounts: defaultUnlockedFor(selectedMountKey),
     optimizeScope: 'allUnlocked',
     fullTimeLimit: { enabled: enabledFlag === 1, seconds },
@@ -357,10 +427,6 @@ function decodeV4Payload(parsed: Record<string, unknown>): ExportedConfig {
 
 function decodeV5Payload(parsed: Record<string, unknown>): ExportedConfig {
   const u = parsed.u as Record<string, unknown> | undefined
-  const validUnlocked =
-    u != null &&
-    typeof u === 'object' &&
-    MOUNT_KEYS.every((key) => u[key] === 0 || u[key] === 1)
   const validBaseShape =
     parsed.version === 5 &&
     Array.isArray(parsed.s) &&
@@ -379,7 +445,7 @@ function decodeV5Payload(parsed: Record<string, unknown>): ExportedConfig {
     (parsed.m === 'n' || parsed.m === 'f') &&
     isMountKey(parsed.mt) &&
     isMountLevelMap(parsed.lv) &&
-    validUnlocked &&
+    isLegacyUnlockedMap(u) &&
     (parsed.os === 'a' || parsed.os === 'e') &&
     Array.isArray(parsed.t) &&
     parsed.t.length === 2 &&
@@ -410,6 +476,7 @@ function decodeV5Payload(parsed: Record<string, unknown>): ExportedConfig {
     electricScooter: u!.electricScooter === 1,
     techHoverboard: u!.techHoverboard === 1,
     doomsteed: u!.doomsteed === 1,
+    netherflameStalker: false,
   }
   // Force-unlock the equipped mount: a hand-edited import string could be
   // inconsistent, but the equipped mount must always be unlocked.
@@ -419,7 +486,7 @@ function decodeV5Payload(parsed: Record<string, unknown>): ExportedConfig {
     currentStats,
     pieces,
     selectedMountKey,
-    mountLevels: parsed.lv as MountLevelMap,
+    mountLevels: { ...defaultMountLevels(), ...(parsed.lv as object) } as MountLevelMap,
     unlockedMounts,
     optimizeScope: parsed.os === 'a' ? 'allUnlocked' : 'equippedOnly',
     fullTimeLimit: { enabled: enabledFlag === 1, seconds },
@@ -428,10 +495,6 @@ function decodeV5Payload(parsed: Record<string, unknown>): ExportedConfig {
 
 function decodeV6Payload(parsed: Record<string, unknown>): ExportedConfig {
   const u = parsed.u as Record<string, unknown> | undefined
-  const validUnlocked =
-    u != null &&
-    typeof u === 'object' &&
-    MOUNT_KEYS.every((key) => u[key] === 0 || u[key] === 1)
   const validShape =
     parsed.version === 6 &&
     Array.isArray(parsed.s) &&
@@ -448,8 +511,8 @@ function decodeV6Payload(parsed: Record<string, unknown>): ExportedConfig {
       )
     }) &&
     isMountKey(parsed.mt) &&
-    isMountLevelMap(parsed.lv) &&
-    validUnlocked &&
+    isLegacyMountLevelMap(parsed.lv) &&
+    isLegacyUnlockedMap(u) &&
     (parsed.os === 'a' || parsed.os === 'e') &&
     Array.isArray(parsed.t) &&
     parsed.t.length === 2 &&
@@ -480,6 +543,7 @@ function decodeV6Payload(parsed: Record<string, unknown>): ExportedConfig {
     electricScooter: u!.electricScooter === 1,
     techHoverboard: u!.techHoverboard === 1,
     doomsteed: u!.doomsteed === 1,
+    netherflameStalker: false,
   }
   unlockedMounts[selectedMountKey] = true
 
@@ -487,7 +551,64 @@ function decodeV6Payload(parsed: Record<string, unknown>): ExportedConfig {
     currentStats,
     pieces,
     selectedMountKey,
-    mountLevels: parsed.lv as MountLevelMap,
+    mountLevels: { ...defaultMountLevels(), ...(parsed.lv as object) } as MountLevelMap,
+    unlockedMounts,
+    optimizeScope: parsed.os === 'a' ? 'allUnlocked' : 'equippedOnly',
+    fullTimeLimit: { enabled: enabledFlag === 1, seconds },
+  }
+}
+
+function decodeV7Payload(parsed: Record<string, unknown>): ExportedConfig {
+  const u = parsed.u as Record<string, unknown> | undefined
+  const validShape =
+    parsed.version === 7 &&
+    Array.isArray(parsed.s) &&
+    parsed.s.length === STAT_KEYS.length &&
+    parsed.s.every((value) => isFiniteNumber(value)) &&
+    Array.isArray(parsed.p) &&
+    parsed.p.every((piece) => {
+      if (!Array.isArray(piece) || piece.length !== 3) return false
+      const [shape, quality, stat] = piece
+      return (
+        SHAPE_KEYS.includes(shape as (typeof SHAPE_KEYS)[number]) &&
+        QUALITIES.some((q) => q.key === quality) &&
+        STAT_KEYS.includes(stat as (typeof STAT_KEYS)[number])
+      )
+    }) &&
+    isMountKey(parsed.mt) &&
+    isMountLevelMap(parsed.lv) &&
+    u != null &&
+    MOUNT_KEYS.every((key) => u[key] === 0 || u[key] === 1) &&
+    (parsed.os === 'a' || parsed.os === 'e') &&
+    Array.isArray(parsed.t) &&
+    parsed.t.length === 2 &&
+    (parsed.t[0] === 0 || parsed.t[0] === 1) &&
+    isFiniteNumber(parsed.t[1]) &&
+    parsed.t[1] >= 1
+
+  if (!validShape) throw new Error('Import string data is invalid.')
+
+  const statValues = parsed.s as number[]
+  const currentStats = STAT_KEYS.reduce<StatTotals>((acc, key, index) => {
+    acc[key] = statValues[index]
+    return acc
+  }, zeroStats())
+  const pieces = (parsed.p as CompactPiece[]).map(([shape, quality, stat]) => ({
+    id: crypto.randomUUID(),
+    shape,
+    quality,
+    stat,
+  }))
+  const selectedMountKey = parsed.mt as MountKey
+  const unlockedMounts = {} as UnlockedMap
+  for (const key of MOUNT_KEYS) unlockedMounts[key] = u![key] === 1
+  unlockedMounts[selectedMountKey] = true
+  const [enabledFlag, seconds] = parsed.t as [0 | 1, number]
+  return {
+    currentStats,
+    pieces,
+    selectedMountKey,
+    mountLevels: { ...defaultMountLevels(), ...(parsed.lv as object) } as MountLevelMap,
     unlockedMounts,
     optimizeScope: parsed.os === 'a' ? 'allUnlocked' : 'equippedOnly',
     fullTimeLimit: { enabled: enabledFlag === 1, seconds },
@@ -495,6 +616,11 @@ function decodeV6Payload(parsed: Record<string, unknown>): ExportedConfig {
 }
 
 function decodeConfig(raw: string): ExportedConfig {
+  if (raw.startsWith(EXPORT_PREFIX_V7)) {
+    const payload = raw.slice(EXPORT_PREFIX_V7.length).trim()
+    const json = new TextDecoder().decode(base64ToBytes(payload))
+    return decodeV7Payload(JSON.parse(json) as Record<string, unknown>)
+  }
   if (raw.startsWith(EXPORT_PREFIX_V6)) {
     const payload = raw.slice(EXPORT_PREFIX_V6.length).trim()
     const json = new TextDecoder().decode(base64ToBytes(payload))

@@ -1,6 +1,6 @@
 # Mount Board Optimizer
 
-A planner for the **Survivor.io** mount board that finds the highest-damage layout of your tetromino-shaped mount pieces. Supports all three mounts (Electric Scooter, Tech Hoverboard, Doomsteed) with their distinct board sizes, line-clear bonuses, and per-mount star levels.
+A planner for the **Survivor.io** mount board that finds the highest-damage layout of your tetromino-shaped mount pieces. Supports all four mounts (Electric Scooter, Tech Hoverboard, Doomsteed, and Netherflame Stalker) with their distinct board sizes, line-clear bonuses, and per-mount star levels.
 
 **Live site:** https://incognit0123.github.io/component-calculator/
 
@@ -30,14 +30,14 @@ When you have multiple mounts unlocked, you can also choose to **optimize all un
 
 Pieces, current stats, mode, equipped mount, per-mount unlocked status, per-mount star levels, and the optimize-all toggle are saved to `localStorage` so you don't lose your setup between sessions. Results are kept as-is when inputs change — the displayed layout reflects the inputs that produced it, not whatever they look like now.
 
-You can also export your full setup as a single `mount-opt:v5:…` string and import it on another device. Older v1–v4 strings still import.
+You can also export your full setup as a single `mount-opt:v7:…` string and import it on another device. Older v1–v6 strings still import; the new mount defaults to locked when importing an older string.
 
 ## Domain reference
 
 - **Stats (8):** `critDamage`, `skillDamage`, `shieldDamage`, `toWeakened`, `toPoisoned`, `toChilled`, `laceration`, `toBosses`
 - **Shapes (5):** `O`, `I`, `T`, `L`, `J` (no S/Z tetrominoes exist in-game)
 - **Quality tiers (7):** `good`, `better`, `excellent`, `excellentPlus`, `epic`, `epicPlus`, `legend`
-- **Mounts & boards (3):** Electric Scooter (8×7), Tech Hoverboard (8×9), Doomsteed (8×12)
+- **Mounts & boards (4):** Electric Scooter (8×7), Tech Hoverboard (8×9), Doomsteed (8×12), Netherflame Stalker (8×12)
 - **Mount level:** 0–8 (4 yellow stars + 4 red stars), tracked independently per mount
 - **Sync rate:** percentage of full piece buffs granted by a non-equipped mount's board, per-mount and per-level (Doomsteed tops out at 100% at 4 red stars; Electric Scooter starts at 20%)
 

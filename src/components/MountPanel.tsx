@@ -148,7 +148,7 @@ function MountIcon({
   size = 80,
 }: {
   bgColor: string
-  iconUrl: string
+  iconUrl?: string
   size?: number
 }) {
   return (
@@ -171,14 +171,28 @@ function MountIcon({
           transformOrigin: 'center center',
         }}
       />
-      <image
-        href={iconUrl}
-        x={15}
-        y={15}
-        width={70}
-        height={70}
-        preserveAspectRatio="xMidYMid meet"
-      />
+      {iconUrl ? (
+        <image
+          href={iconUrl}
+          x={15}
+          y={15}
+          width={70}
+          height={70}
+          preserveAspectRatio="xMidYMid meet"
+        />
+      ) : (
+        <text
+          x={50}
+          y={57}
+          textAnchor="middle"
+          fill="white"
+          fontSize={22}
+          fontWeight="700"
+          letterSpacing="-1"
+        >
+          NS
+        </text>
+      )}
     </svg>
   )
 }
@@ -199,7 +213,7 @@ export function MountPanel({
   return (
     <PanelShell title="Mount">
       <div className="flex flex-col gap-3 mt-1">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {MOUNT_KEYS.map((key) => {
             const mount = MOUNTS[key]
             const isUnlocked = unlocked[key]

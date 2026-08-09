@@ -2,13 +2,18 @@ import type { LineBonusTier, MountLevel } from './lineBonuses'
 import electricScooterIcon from '../assets/icons/mounts/electric_scooter.webp'
 import techHoverboardIcon from '../assets/icons/mounts/tech_hoverboard.webp'
 import doomsteedIcon from '../assets/icons/mounts/doomsteed.webp'
+import netherflameStalkerIcon from '../assets/icons/mounts/netherflame_stalker.webp'
 
-export type MountKey = 'electricScooter' | 'techHoverboard' | 'doomsteed'
+export type MountKey =
+  | 'electricScooter'
+  | 'techHoverboard'
+  | 'doomsteed'
+  | 'netherflameStalker'
 
 export interface MountSpec {
   key: MountKey
   name: string
-  iconUrl: string
+  iconUrl?: string
   /** Background polygon fill color (clipped-corner square behind the icon). */
   bgColor: string
   /** Board column count. Rows are always 8 across all mounts. */
@@ -29,6 +34,7 @@ export const MOUNT_KEYS: MountKey[] = [
   'electricScooter',
   'techHoverboard',
   'doomsteed',
+  'netherflameStalker',
 ]
 
 export const DEFAULT_MOUNT_KEY: MountKey = 'electricScooter'
@@ -76,6 +82,25 @@ const ELECTRIC_SCOOTER_SYNC_RATES: number[] = [20, 22, 24, 28, 32, 38, 44, 52, 6
 const TECH_HOVERBOARD_SYNC_RATES: number[] = [30, 33, 36, 40, 45, 50, 55, 60, 75]
 const DOOMSTEED_SYNC_RATES: number[] = [40, 44, 48, 55, 62, 71, 80, 90, 100]
 
+const NETHERFLAME_STALKER_TIERS: LineBonusTier[] = [
+  { minLines: 1, unlockedAtLevel: 0, bonus: { toChilled: 30 } },
+  { minLines: 2, unlockedAtLevel: 0, bonus: { skillDamage: 100 } },
+  {
+    minLines: 3,
+    unlockedAtLevel: 0,
+    bonus: { toChilled: 70, toBosses: 10 },
+  },
+  { minLines: 4, unlockedAtLevel: 0, bonus: {} },
+  { minLines: 5, unlockedAtLevel: 2, bonus: { skillDamage: 100 } },
+  {
+    minLines: 6,
+    unlockedAtLevel: 4,
+    bonus: { toChilled: 100, shieldDamage: 60 },
+  },
+  { minLines: 7, unlockedAtLevel: 6, bonus: { toBosses: 30 } },
+  { minLines: 8, unlockedAtLevel: 8, bonus: { shieldDamage: 120 } },
+]
+
 export const MOUNTS: Record<MountKey, MountSpec> = {
   electricScooter: {
     key: 'electricScooter',
@@ -102,6 +127,15 @@ export const MOUNTS: Record<MountKey, MountSpec> = {
     bgColor: '#FE4C6A',
     cols: 12,
     lineBonusTiers: DOOMSTEED_TIERS,
+    syncRates: DOOMSTEED_SYNC_RATES,
+  },
+  netherflameStalker: {
+    key: 'netherflameStalker',
+    name: 'Netherflame Stalker',
+    iconUrl: netherflameStalkerIcon,
+    bgColor: '#FE4C6A',
+    cols: 12,
+    lineBonusTiers: NETHERFLAME_STALKER_TIERS,
     syncRates: DOOMSTEED_SYNC_RATES,
   },
 }
