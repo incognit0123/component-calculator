@@ -1147,8 +1147,12 @@ export default function App() {
               pieces={pieces}
               currentStats={currentStats}
               onChange={setPieces}
+              // "Unused" only means something once a run has finished; mid-run
+              // it's just the not-yet-placed pieces, so don't surface it.
               unusedIds={
-                new Set(result?.unusedPieceIds ?? [])
+                status.running
+                  ? undefined
+                  : new Set(result?.unusedPieceIds ?? [])
               }
             />
             <MountPanel
@@ -1310,7 +1314,7 @@ export default function App() {
                   />
                 )}
 
-                {result.unusedPieceIds.length > 0 && (
+                {!status.running && result.unusedPieceIds.length > 0 && (
                   <div>
                     <h3 className="text-sm font-semibold text-white mb-2">
                       Unused pieces ({result.unusedPieceIds.length})
