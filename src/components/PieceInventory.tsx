@@ -17,7 +17,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { Dropdown } from 'antd'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
-import type { Piece, StatTotals } from '../data/types'
+import type { Piece, StatKey, StatTotals } from '../data/types'
 import { usePersistedState } from '../hooks/usePersistedState'
 import {
   sortByMarginalGain,
@@ -28,10 +28,11 @@ import { BulkPieceEditor } from './BulkPieceEditor'
 import { PieceCard } from './PieceCard'
 import { PieceEditor } from './PieceEditor'
 import { PanelShell } from './PanelShell'
+import { StatIcon } from './icons/StatIcon'
+import { STATS } from '../data/stats'
 
-const COLLAPSED_KEY = 'mount-opt:inventory-collapsed:v1'
-// 4 rows of 140px-min tiles + 3 row-gaps of 12px
-const COLLAPSED_MAX_HEIGHT = 4 * 140 + 3 * 12
+// v2: collapsed-by-default (v1 was an expanded-by-default scroll box).
+const COLLAPSED_KEY = 'mount-opt:inventory-collapsed:v2'
 
 interface Props {
   pieces: Piece[]
@@ -93,7 +94,7 @@ export function PieceInventory({
   const [bulkOpen, setBulkOpen] = useState(false)
   const [collapsed, setCollapsed] = usePersistedState<boolean>(
     COLLAPSED_KEY,
-    false,
+    true,
   )
 
   // Small drag-activation distance avoids triggering drags on stray click
@@ -171,11 +172,18 @@ export function PieceInventory({
   ]
 
   const pieceIds = pieces.map((p) => p.id)
+  const statCounts = pieces.reduce(
+    (acc, p) => {
+      acc[p.stat] = (acc[p.stat] ?? 0) + 1
+      return acc
+    },
+    {} as Record<StatKey, number>,
+  )
 
   return (
     <PanelShell title="Inventory">
       <header className="flex items-center justify-end -mt-2 mb-3">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2 [&_button]:whitespace-nowrap">
           <button
             type="button"
             onClick={handleClear}
@@ -220,10 +228,35 @@ export function PieceInventory({
         </p>
       ) : (
         <>
-          <div
-            className={collapsed ? 'overflow-y-auto pr-1' : ''}
-            style={collapsed ? { maxHeight: COLLAPSED_MAX_HEIGHT } : undefined}
-          >
+          {collapsed ? (
+            <div className="panel-inner p-3 flex flex-col gap-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                <span className="text-sm text-white">
+                  {pieces.length} piece{pieces.length === 1 ? '' : 's'}
+                </span>
+                {unusedIds && unusedIds.size > 0 && (
+                  <span className="text-xs text-gray-400">
+                    {unusedIds.size} not used in the last result
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {STATS.filter((st) => statCounts[st.key] > 0).map((st) => (
+                  <span
+                    key={st.key}
+                    className="flex items-center gap-1.5 rounded-full border border-bg-line bg-bg-elev px-2 py-1 text-xs text-gray-200"
+                    title={st.short}
+                  >
+                    <StatIcon stat={st.key} size={16} />
+                    {st.short}
+                    <span className="text-white font-semibold tabular-nums">
+                      {statCounts[st.key]}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : (
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
@@ -243,16 +276,25 @@ export function PieceInventory({
                 </div>
               </SortableContext>
             </DndContext>
-          </div>
+          )}
           <div className="flex justify-center mt-3">
             <button
               type="button"
               onClick={() => setCollapsed((c) => !c)}
-              aria-label={collapsed ? 'Expand inventory' : 'Collapse inventory'}
-              title={collapsed ? 'Expand inventory' : 'Collapse inventory'}
-              className="flex items-center justify-center w-8 h-8 rounded-full border border-[#151922] bg-[#2f354a] text-gray-300 hover:bg-[#3b435d] hover:text-white transition"
+              aria-expanded={!collapsed}
+              className="flex items-center gap-1.5 rounded-full border border-[#151922] bg-[#2f354a] px-3 py-1.5 text-xs text-gray-300 hover:bg-[#3b435d] hover:text-white transition"
             >
-              {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+              {collapsed ? (
+                <>
+                  <ChevronDown size={14} />
+                  Show all {pieces.length} piece{pieces.length === 1 ? '' : 's'}
+                </>
+              ) : (
+                <>
+                  <ChevronUp size={14} />
+                  Hide pieces
+                </>
+              )}
             </button>
           </div>
         </>
