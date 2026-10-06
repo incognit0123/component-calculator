@@ -1,12 +1,19 @@
-COMPOSE := docker compose
+# Fixed project name so every checkout/worktree targets the same stack
+# (container_name is fixed, so two stacks can't coexist anyway).
+COMPOSE := docker compose -p mount-optimizer
+CONTAINER := mount-optimizer-app
 SERVICE := app
 
-.PHONY: build up down logs ps restart clean shell
+stop-existing:
+	-$(COMPOSE) down
+	-docker rm -f $(CONTAINER) >/dev/null 2>&1
 
-build: ## Build and run containers (attached with logs)
+.PHONY: stop-existing build up down logs ps restart clean shell
+
+build: stop-existing ## Replace any running app, then build and run (attached with logs)
 	$(COMPOSE) up --build
 
-up: ## Run containers in background
+up: stop-existing ## Replace any running app, then run in background
 	$(COMPOSE) up -d --build
 
 down: ## Stop and remove containers

@@ -19,6 +19,17 @@ interface Bucket {
   pieces: Piece[]
 }
 
+export interface SelectionOptions {
+  /**
+   * A known-feasible selection (same dist, lineCount, tiers) to start from:
+   * the DFS only has to beat it, which prunes far harder than starting from
+   * "no pieces". The result is never worse than the seed.
+   */
+  seed?: SelectionResult
+  /** Stop the DFS after this many nodes and return the best found so far. */
+  nodeBudget?: number
+}
+
 export interface SelectionResult {
   picks: Piece[]
   score: number
@@ -55,6 +66,7 @@ export function selectPieces(
   tiers: LineBonusTier[],
   mountLevel: MountLevel,
   pieceBuffMultiplier = 1,
+  opts: SelectionOptions = {},
 ): SelectionResult {
   const baseStats = cloneStats(currentStats)
   applyLineBonuses(baseStats, lineCount, tiers, mountLevel)
@@ -93,6 +105,19 @@ export function selectPieces(
   const pickCounts: number[] = new Array(buckets.length).fill(0)
   let bestScore = baseScore
   let bestPickCounts: number[] = pickCounts.slice()
+  const nodeBudget = opts.nodeBudget ?? Infinity
+  let nodes = 0
+  if (opts.seed) {
+    const bucketIdx = new Map(
+      buckets.map((b, i) => [`${b.shape}|${b.stat}|${b.quality}`, i]),
+    )
+    const seeded: number[] = new Array(buckets.length).fill(0)
+    for (const p of opts.seed.picks) {
+      seeded[bucketIdx.get(`${p.shape}|${p.stat}|${p.quality}`)!]++
+    }
+    bestPickCounts = seeded
+    bestScore = opts.seed.score
+  }
 
   function totalSlotsLeft(): number {
     let n = 0
@@ -141,6 +166,7 @@ export function selectPieces(
   }
 
   function dfs(idx: number): void {
+    if (++nodes > nodeBudget) return
     if (totalSlotsLeft() === 0) {
       const score = formula(accumStats)
       if (score > bestScore) {

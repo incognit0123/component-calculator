@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { MOUNTS, type MountKey } from '../data/mounts'
 import { PanelShell } from './PanelShell'
 
 export interface FullTimeLimit {
@@ -35,17 +36,30 @@ interface Props {
   boardIndex?: number
   /** Authoritative board count from the optimizer (overrides the prop fallback). */
   progressBoardCount?: number
+  /** Mount being optimized right now. */
+  currentMountKey?: MountKey
+  /** Mounts whose boards are already finished, in solve order. */
+  finishedMountKeys?: MountKey[]
 }
 
 interface BarProps {
   running: boolean
   /** Per-board time budget in ms (when the time-limit toggle is on). */
   timeBudgetMsPerBoard?: number
+  /** Layouts the current board has tiled and scored so far (no known total). */
   exploredCount?: number
+  /** Per-board fraction in [0, 1]; only an indicator, the search can stop early. */
   fractionComplete?: number
   boardIndex?: number
   boardCount?: number
+  /** Mount being optimized right now. */
+  currentMountKey?: MountKey
+  /** Mounts whose boards are already finished, in solve order. */
+  finishedMountKeys?: MountKey[]
 }
+
+/** Largest share of a board's segment the (unreliable) fraction may fill. */
+const MAX_PARTIAL_FILL = 0.95
 
 function ProgressBar({
   running,
@@ -54,6 +68,8 @@ function ProgressBar({
   fractionComplete,
   boardIndex,
   boardCount,
+  currentMountKey,
+  finishedMountKeys,
 }: BarProps) {
   const [boardStartedAt, setBoardStartedAt] = useState<number | null>(null)
   const lastBoardIndexRef = useRef<number | undefined>(undefined)
@@ -94,46 +110,89 @@ function ProgressBar({
   const timePct = timed
     ? Math.min(100, (elapsedThisBoard / timeBudgetMsPerBoard) * 100)
     : 0
-  const fractionPct = Math.min(100, Math.max(0, (fractionComplete ?? 0) * 100))
-  const showIndicator = (boardCount ?? 0) > 1
+  const total = Math.max(1, boardCount ?? 1)
+  const current = Math.min(total, Math.max(1, boardIndex ?? 1))
+  const partial = Math.min(
+    MAX_PARTIAL_FILL,
+    Math.max(0, fractionComplete ?? 0),
+  )
+  const currentMount = currentMountKey ? MOUNTS[currentMountKey] : null
+  const finished = finishedMountKeys ?? []
+
+  // One segment per board: finished boards are full, the current board shows
+  // its (indicative) fraction on a pulsing fill, later boards are empty. The
+  // overall bar therefore only ever moves forward.
+  const segments = Array.from({ length: total }, (_, i) => {
+    const n = i + 1
+    const key =
+      n < current ? finished[i] : n === current ? currentMountKey : undefined
+    const fill = n < current ? 1 : n === current ? partial : 0
+    return { n, key, fill, isCurrent: n === current }
+  })
 
   return (
-    <div className="mt-3 flex items-start gap-2">
-      {showIndicator && (
-        <span className="text-xs text-gray-300 tabular-nums shrink-0 pt-0.5">
-          {boardIndex ?? 1}/{boardCount}
-        </span>
+    <div className="mt-3">
+      {total > 1 && (
+        <div className="flex items-center gap-2 text-xs text-gray-300 mb-1.5">
+          <span className="tabular-nums">
+            Board {current} of {total}
+          </span>
+          {currentMount && (
+            <span className="flex items-center gap-1.5 text-white">
+              {currentMount.iconUrl && (
+                <img
+                  src={currentMount.iconUrl}
+                  alt=""
+                  className="h-4 w-4 object-contain"
+                />
+              )}
+              {currentMount.name}
+            </span>
+          )}
+        </div>
       )}
-      <div className="flex-1 min-w-0">
-        <div className="h-2.5 rounded-full bg-bg-line overflow-hidden">
+      <div className="flex gap-1">
+        {segments.map((seg) => (
+          <div key={seg.n} className="flex-1 min-w-0">
+            <div
+              className="h-2.5 rounded-full bg-bg-line overflow-hidden"
+              title={seg.key ? MOUNTS[seg.key].name : `Board ${seg.n}`}
+            >
+              <div
+                className={`h-full bg-accent ${seg.isCurrent ? 'animate-pulse' : ''}`}
+                style={{
+                  width: `${seg.fill * 100}%`,
+                  transition: 'width 200ms linear',
+                }}
+              />
+            </div>
+            {total > 1 && (
+              <div className="text-[10px] text-gray-500 mt-0.5 truncate">
+                {seg.key ? MOUNTS[seg.key].name : '·'}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      {timed && (
+        <div className="h-1.5 rounded-full bg-bg-line overflow-hidden mt-1">
           <div
-            className="h-full bg-accent"
+            className="h-full bg-accent/50"
             style={{
-              width: `${fractionPct}%`,
-              transition: 'width 200ms linear',
+              width: `${timePct}%`,
+              transition: 'width 100ms linear',
             }}
           />
         </div>
-        {timed && (
-          <div className="h-1.5 rounded-full bg-bg-line overflow-hidden mt-0.5">
-            <div
-              className="h-full bg-accent/50"
-              style={{
-                width: `${timePct}%`,
-                transition: 'width 100ms linear',
-              }}
-            />
-          </div>
+      )}
+      <div className="flex justify-between text-[11px] text-gray-500 mt-1">
+        <span>
+          {(elapsedThisBoard / 1000).toFixed(1)}s on this board
+          {timed && ` of ${(timeBudgetMsPerBoard! / 1000).toFixed(0)}s limit`}
+        </span>
+        {exploredCount != null && exploredCount > 0 && (
+          <span>{exploredCount.toLocaleString()} layouts checked</span>
         )}
-        <div className="flex justify-between text-[11px] text-gray-500 mt-1">
-          <span>
-            {(elapsedThisBoard / 1000).toFixed(1)}s elapsed
-            {timed && ` / ${(timeBudgetMsPerBoard! / 1000).toFixed(1)}s`}
-          </span>
-          {exploredCount != null && exploredCount > 0 && (
-            <span>{exploredCount.toLocaleString()} explored</span>
-          )}
-        </div>
       </div>
     </div>
   )
@@ -155,6 +214,8 @@ export function OptimizerPanel({
   fractionComplete,
   boardIndex,
   progressBoardCount,
+  currentMountKey,
+  finishedMountKeys,
 }: Props) {
   const timeBudgetMsPerBoard = fullTimeLimit.enabled
     ? fullTimeLimit.seconds * 1000
@@ -269,6 +330,8 @@ export function OptimizerPanel({
         fractionComplete={fractionComplete}
         boardIndex={boardIndex}
         boardCount={effectiveBoardCount}
+        currentMountKey={currentMountKey}
+        finishedMountKeys={finishedMountKeys}
       />
 
       {progressLabel && (
