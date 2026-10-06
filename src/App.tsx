@@ -1181,6 +1181,10 @@ export default function App() {
               fractionComplete={status.progress?.fractionComplete}
               boardIndex={status.progress?.boardIndex}
               progressBoardCount={status.progress?.boardCount}
+              currentMountKey={status.progress?.currentMountKey}
+              finishedMountKeys={status.progress?.partial.boards
+                .filter((b) => b.mountKey !== status.progress?.currentMountKey)
+                .map((b) => b.mountKey)}
               progressLabel={
                 status.error
                   ? `Error: ${status.error}`
