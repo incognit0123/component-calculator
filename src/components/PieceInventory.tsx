@@ -25,6 +25,7 @@ import {
   sortByShapeQuality,
 } from '../utils/sortPieces'
 import { BulkPieceEditor } from './BulkPieceEditor'
+import { ConfirmDialog } from './ConfirmDialog'
 import { PieceCard } from './PieceCard'
 import { PieceEditor } from './PieceEditor'
 import { PanelShell } from './PanelShell'
@@ -92,6 +93,7 @@ export function PieceInventory({
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<Piece | null>(null)
   const [bulkOpen, setBulkOpen] = useState(false)
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
   const [collapsed, setCollapsed] = usePersistedState<boolean>(
     COLLAPSED_KEY,
     true,
@@ -126,11 +128,11 @@ export function PieceInventory({
 
   const handleClear = () => {
     if (pieces.length === 0) return
-    if (
-      window.confirm(`Clear all ${pieces.length} piece${pieces.length === 1 ? '' : 's'}?`)
-    ) {
-      onChange([])
-    }
+    setClearConfirmOpen(true)
+  }
+  const confirmClear = () => {
+    setClearConfirmOpen(false)
+    onChange([])
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -312,6 +314,22 @@ export function PieceInventory({
         </>
       )}
 
+      <ConfirmDialog
+        open={clearConfirmOpen}
+        title={`Clear all ${pieces.length} piece${pieces.length === 1 ? '' : 's'}?`}
+        confirmLabel="Clear all"
+        destructive
+        onConfirm={confirmClear}
+        onCancel={() => setClearConfirmOpen(false)}
+      >
+        <p>
+          This removes every piece from your inventory and can't be undone.
+        </p>
+        <p className="text-gray-400">
+          Tip: use <span className="text-white">Export</span> at the top of the
+          page first if you want a copy you can import back.
+        </p>
+      </ConfirmDialog>
       <BulkPieceEditor
         open={bulkOpen}
         pieces={pieces}
