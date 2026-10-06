@@ -24,6 +24,7 @@ import {
   sortByQualityShape,
   sortByShapeQuality,
 } from '../utils/sortPieces'
+import { BulkPieceEditor } from './BulkPieceEditor'
 import { PieceCard } from './PieceCard'
 import { PieceEditor } from './PieceEditor'
 import { PanelShell } from './PanelShell'
@@ -89,6 +90,7 @@ export function PieceInventory({
 }: Props) {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<Piece | null>(null)
+  const [bulkOpen, setBulkOpen] = useState(false)
   const [collapsed, setCollapsed] = usePersistedState<boolean>(
     COLLAPSED_KEY,
     false,
@@ -197,6 +199,13 @@ export function PieceInventory({
           </Dropdown>
           <button
             type="button"
+            onClick={() => setBulkOpen(true)}
+            className="app-button bg-[#2f354a] hover:bg-[#3b435d]"
+          >
+            Bulk edit
+          </button>
+          <button
+            type="button"
             onClick={openAdd}
             className="app-button"
           >
@@ -249,6 +258,12 @@ export function PieceInventory({
         </>
       )}
 
+      <BulkPieceEditor
+        open={bulkOpen}
+        pieces={pieces}
+        onClose={() => setBulkOpen(false)}
+        onApply={onChange}
+      />
       <PieceEditor
         open={editorOpen}
         initial={editing}
