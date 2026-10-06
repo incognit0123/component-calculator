@@ -1,4 +1,3 @@
-import { BUFF_TABLE } from '../data/buffTable'
 import {
   maxBonusLinesForLevel,
   type LineBonusTier,
@@ -9,10 +8,9 @@ import { MIN_PIECE_CELLS, SHAPE_KEYS } from '../data/shapes'
 import { zeroStats } from '../data/stats'
 import type { Piece, ShapeKey, StatTotals } from '../data/types'
 import { boardBits } from './board'
+import { createGreedyEstimator } from './greedy'
 import { selectPieces } from './selection'
 import {
-  applyLineBonuses,
-  cloneStats,
   finalizeStats,
   formula,
   scoreLayout,
@@ -24,6 +22,7 @@ import {
   totalShapeCells,
   type ShapeCounts,
   type SlotPlacement,
+  type TilingResult,
 } from './tiling'
 import { BOARD_ROWS } from './types'
 import type { BoardSolveResult, Placement } from './types'
@@ -57,6 +56,14 @@ export interface SolveOptions {
    * Set this for non-equipped mounts (which don't grant line bonuses).
    */
   disableLineBonuses?: boolean
+  /**
+   * Stop once no remaining candidate can beat the best layout by more than
+   * this fraction (default 0.01 = result is provably within 1% of optimal).
+   * Pass 0 for an exhaustive proof of optimality.
+   */
+  optimalityTolerance?: number
+  /** DFS node cap for refining one mix's piece selection (default 2000). */
+  selectionNodeBudget?: number
 }
 
 const YIELD_INTERVAL_MS = 8
@@ -67,6 +74,14 @@ const PROGRESS_INTERVAL_MS = 400
  * shape-distribution mismatches against inventory can fall back further.
  */
 const NEAR_FULL_DEPTH = 2
+/**
+ * The greedy estimate can undershoot the exact selection score (observed worst
+ * case ~4.4%, see greedy.test.ts). The stop rule inflates estimates by this
+ * factor so a mix whose true score is higher than its estimate isn't skipped.
+ */
+const GREEDY_SLACK = 1.015
+/** DFS node cap for the exact selection refinement of one mix. */
+const SELECTION_NODE_BUDGET = 2_000
 
 /**
  * Top-level optimizer.
@@ -113,6 +128,8 @@ export async function solve(
     tiers,
     mountLevel,
     pieceBuffMultiplier,
+    optimalityTolerance: opts.optimalityTolerance ?? 0.01,
+    selectionNodeBudget: opts.selectionNodeBudget ?? SELECTION_NODE_BUDGET,
     maxBonusLines: maxBonusLinesForLevel(mountLevel, tiers),
     geometricMaxPieces,
     totalCells,
@@ -132,11 +149,10 @@ export async function solve(
     latestBest: null,
   }
 
-  const piecesByShape = groupPiecesByShape(inventory)
   const result =
     inventory.length < geometricMaxPieces
       ? await solveSmallInventory(ctx)
-      : await solveFullInventory(ctx, piecesByShape)
+      : await solveFullInventory(ctx)
   result.elapsedMs = performance.now() - started
   result.truncated = ctx.truncated
   return result
@@ -150,6 +166,8 @@ interface SolveContext {
   tiers: LineBonusTier[]
   mountLevel: MountLevel
   pieceBuffMultiplier: number
+  optimalityTolerance: number
+  selectionNodeBudget: number
   maxBonusLines: number
   geometricMaxPieces: number
   totalCells: number
@@ -172,13 +190,6 @@ interface SolveContext {
   distProcessed: number
   /** Latest best-so-far snapshot (kept so periodic progress can emit without a fresh improvement). */
   latestBest: BoardSolveResult | null
-}
-
-function groupPiecesByShape(pieces: Piece[]): Record<ShapeKey, Piece[]> {
-  const out = {} as Record<ShapeKey, Piece[]>
-  for (const s of SHAPE_KEYS) out[s] = []
-  for (const p of pieces) out[p.shape].push(p)
-  return out
 }
 
 /**
@@ -236,7 +247,6 @@ async function solveSmallInventory(ctx: SolveContext): Promise<BoardSolveResult>
 
 async function solveFullInventory(
   ctx: SolveContext,
-  piecesByShape: Record<ShapeKey, Piece[]>,
 ): Promise<BoardSolveResult> {
   const invCounts = inventoryShapeCounts(ctx.inventory)
   const distributions: ShapeCounts[] = []
@@ -249,67 +259,75 @@ async function solveFullInventory(
     }
   }
 
-  const ranked = distributions.map((dist) => ({
+  // Greedy-ranked best-first search.
+  //
+  // Tiling (~100ms per shape mix on the widest board) dwarfs everything else,
+  // and the admissible per-shape ratio bound is far too loose to prune with
+  // (it ignores that slots compete for the same stats). So rank mixes by a
+  // fast greedy estimate of their best selection (microseconds each), tile in
+  // that order, and run the exact selection only on mixes that tile. Stop once
+  // no remaining mix is estimated to beat the best layout by more than the
+  // optimality tolerance. Ranking is by estimate, so the guarantee is
+  // "within ~tolerance" rather than a proof, which is the intended trade-off.
+  const estimator = createGreedyEstimator(
+    ctx.inventory,
+    ctx.currentStats,
+    ctx.tiers,
+    ctx.mountLevel,
+    ctx.pieceBuffMultiplier,
+  )
+  const queue: QueueEntry[] = distributions.map((dist) => ({
     dist,
-    upperBound: distributionUpperBound(
-      piecesByShape,
+    ub: estimator.estimate(
       dist,
-      ctx.currentStats,
-      ctx.tiers,
-      ctx.mountLevel,
-      ctx.maxBonusLines,
-      ctx.cols,
-      ctx.pieceBuffMultiplier,
+      effectiveLineTarget(totalShapeCells(dist), ctx.maxBonusLines, ctx.cols),
     ),
   }))
-  // Rank by descending upper bound. The optimum almost always lives at the
-  // largest (full-board) piece count — adding any piece strictly improves the
-  // score — and those distributions carry the highest bounds, so they're
-  // evaluated first. Finding the true optimum early then upper-bound-prunes the
-  // vast majority of smaller (G-1/G-2) distributions with no tiling attempt.
-  //
-  // This relies on the MRV tiler resolving each distribution (feasible or not)
-  // in ~milliseconds; with the old tiler, full boards took ~341ms each to
-  // attempt/disprove, so bound-first ordering spent the whole budget failing to
-  // tile full boards before placing a single piece (the empty-board bug). If
-  // the tiler ever regresses to that cost, this ordering would need to change.
-  ranked.sort((a, b) => b.upperBound - a.upperBound)
+  queue.sort((a, b) => b.ub - a.ub)
 
-  ctx.distTotal = ranked.length
+  ctx.distTotal = queue.length
   ctx.distProcessed = 0
 
   let best: BoardSolveResult | null = null
   let bestScore = formula(ctx.currentStats)
+  const threshold = 1 + ctx.optimalityTolerance
 
-  for (const { dist, upperBound: ub } of ranked) {
+  for (const entry of queue) {
     if (await maybeYield(ctx)) break
 
-    ctx.distProcessed++
-
-    if (ub <= bestScore) {
+    // Sorted descending: nothing after this can beat the best (within
+    // tolerance), so count the rest as processed and stop.
+    if (entry.ub * GREEDY_SLACK <= bestScore * threshold) {
+      ctx.distProcessed = ctx.distTotal
       maybeProgress(ctx)
-      continue
+      break
     }
 
-    const tiling = tileDistribution(
-      dist,
+    const target = effectiveLineTarget(
+      totalShapeCells(entry.dist),
+      ctx.maxBonusLines,
       ctx.cols,
-      effectiveLineTarget(totalShapeCells(dist), ctx.maxBonusLines, ctx.cols),
-      { deadline: ctx.deadline },
     )
+
+    ctx.distProcessed++
+    const tiling = cachedTile(ctx, entry.dist, target)
     if (!tiling) {
       maybeProgress(ctx)
       continue
     }
 
+    // Start the exact search from the greedy answer and cap its effort: it can
+    // only improve on the seed, so the cost is bounded and quality never drops.
+    const seed = estimator.pick(entry.dist, tiling.lines)
     const selection = selectPieces(
       ctx.inventory,
-      dist,
+      entry.dist,
       tiling.lines,
       ctx.currentStats,
       ctx.tiers,
       ctx.mountLevel,
       ctx.pieceBuffMultiplier,
+      { seed, nodeBudget: ctx.selectionNodeBudget },
     )
     ctx.explored++
 
@@ -324,43 +342,32 @@ async function solveFullInventory(
   return best ?? emptyResult(ctx)
 }
 
-/**
- * Optimistic upper bound on the best achievable score for `dist`. Uses the
- * line-bonus cap and per-shape multiplicative ratio bound (same admissible
- * structure as in `selection.ts`'s DFS bound, but unrolled).
- */
-function distributionUpperBound(
-  piecesByShape: Record<ShapeKey, Piece[]>,
-  dist: ShapeCounts,
-  currentStats: StatTotals,
-  tiers: LineBonusTier[],
-  mountLevel: MountLevel,
-  maxBonusLines: number,
-  cols: number,
-  pieceBuffMultiplier: number,
-): number {
-  const cellsToPlace = totalShapeCells(dist)
-  const lines = effectiveLineTarget(cellsToPlace, maxBonusLines, cols)
-  const stats = cloneStats(currentStats)
-  applyLineBonuses(stats, lines, tiers, mountLevel)
-  const baseScore = formula(stats)
+interface QueueEntry {
+  dist: ShapeCounts
+  /** Greedy estimate of the best score for this mix at its line target. */
+  ub: number
+}
 
-  let bound = baseScore
-  for (const shape of SHAPE_KEYS) {
-    const slots = dist[shape]
-    if (slots === 0) continue
-    const pool = piecesByShape[shape]
-    const ratios: number[] = []
-    for (const p of pool) {
-      const s = cloneStats(stats)
-      s[p.stat] += BUFF_TABLE[p.quality][p.stat] * pieceBuffMultiplier
-      ratios.push(formula(s) / baseScore)
-    }
-    ratios.sort((a, b) => b - a)
-    const k = Math.min(slots, ratios.length)
-    for (let i = 0; i < k; i++) bound *= ratios[i]
-  }
-  return bound
+/**
+ * Tiling depends only on (cols, shape mix, line target), not on pieces or
+ * stats, so results are reusable across boards and re-runs. Aborted searches
+ * (deadline hit) are not cached since a null there means "gave up".
+ */
+const tilingCache = new Map<string, TilingResult | null>()
+
+function cachedTile(
+  ctx: SolveContext,
+  dist: ShapeCounts,
+  target: number,
+): TilingResult | null {
+  const key = `${ctx.cols}|${target}|${SHAPE_KEYS.map((s) => dist[s]).join(',')}`
+  const hit = tilingCache.get(key)
+  if (hit !== undefined) return hit
+  const result = tileDistribution(dist, ctx.cols, target, {
+    deadline: ctx.deadline,
+  })
+  if (performance.now() < ctx.deadline) tilingCache.set(key, result)
+  return result
 }
 
 /**
