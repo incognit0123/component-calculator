@@ -81,12 +81,14 @@ export function BoardView({
   const iconSize = Math.min(cellSize - 14, 22)
 
   return (
-    <div className="p-2 rounded-xl bg-bg-elev border border-bg-line">
+    <div className="p-2 rounded-xl bg-bg-elev border border-bg-line max-w-full">
+      {/* width/height are the natural size; max-w-full + h-auto let the board
+          scale down (viewBox keeps the aspect ratio) on narrow screens. */}
       <svg
         width={boardWidth}
         height={boardHeight}
         viewBox={`0 0 ${boardWidth} ${boardHeight}`}
-        className="block rounded-md overflow-hidden"
+        className="block rounded-md overflow-hidden max-w-full h-auto"
         shapeRendering="geometricPrecision"
       >
         <rect

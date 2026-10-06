@@ -141,93 +141,92 @@ export function BulkPieceEditor({ open, pieces, onClose, onApply }: Props) {
           ))}
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full border-separate border-spacing-y-1">
-            <thead>
-              <tr>
-                <th className="text-left text-xs text-gray-400 font-normal pl-1">
-                  {STAT_META[stat].name}
-                </th>
-                {SHAPE_KEYS.map((shape) => (
-                  <th key={shape} className="text-xs text-gray-400 font-normal">
-                    {shape}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {QUALITIES.map((q) => {
-                const meta = QUALITY_META[q.key]
-                return (
-                  <tr key={q.key}>
-                    <td className="pr-2">
-                      <div className="flex items-center gap-2">
-                        <TierBadge tier={q.key} />
-                        <span
-                          className="text-xs font-semibold"
-                          style={{ color: meta.color }}
-                        >
-                          +{BUFF_TABLE[q.key][stat]}%
-                        </span>
+        <div className="flex flex-col gap-2">
+          <div className="text-xs text-gray-400 pl-1">
+            {STAT_META[stat].name}
+          </div>
+          {QUALITIES.map((q) => {
+            const meta = QUALITY_META[q.key]
+            return (
+              // Phone: tier label above a 5-column row of shapes. sm+: a single
+              // row with the label in a fixed first column.
+              <div
+                key={q.key}
+                className="rounded-md bg-bg-elev/40 p-2 sm:grid sm:grid-cols-[9rem_repeat(5,minmax(0,1fr))] sm:items-center sm:gap-1"
+              >
+                <div className="flex items-center gap-2 mb-2 sm:mb-0">
+                  <TierBadge tier={q.key} />
+                  <span
+                    className="text-xs font-semibold"
+                    style={{ color: meta.color }}
+                  >
+                    +{BUFF_TABLE[q.key][stat]}%
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-1 sm:contents">
+                  {SHAPE_KEYS.map((shape) => {
+                    const k = cellKey(stat, q.key, shape)
+                    const n = draft[k] ?? 0
+                    return (
+                      <div
+                        key={shape}
+                        className="flex flex-col items-center gap-1 min-w-0"
+                      >
+                        {/* Fixed height: taller glyphs (L/J) must not push the
+                            inputs below them out of line with the others. */}
+                        <div className="flex h-8 items-center gap-1">
+                          <ShapeGlyph
+                            shape={shape}
+                            color={meta.color}
+                            diamondColor={meta.diamondColor}
+                            cell={8}
+                          />
+                        </div>
+                        {/* Phone: + above, number, - below (big tap targets).
+                            sm+: - number + in a row. */}
+                        <div className="flex flex-col-reverse sm:flex-row items-stretch gap-0.5 sm:gap-0 w-full sm:w-auto">
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            aria-label={`Decrease ${q.key} ${shape}`}
+                            onClick={() => setCount(k, n - 1)}
+                            className="h-9 sm:h-7 sm:w-6 flex items-center justify-center rounded sm:rounded-none sm:rounded-l border border-bg-line text-gray-300 hover:bg-bg-elev active:bg-bg-elev"
+                          >
+                            <Minus size={14} />
+                          </button>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min={0}
+                            max={MAX_COUNT}
+                            value={n === 0 ? '' : n}
+                            placeholder="0"
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) =>
+                              setCount(k, parseInt(e.target.value, 10) || 0)
+                            }
+                            aria-label={`${q.key} ${shape} count`}
+                            className={`h-9 sm:h-7 w-full sm:w-10 min-w-0 text-center text-sm bg-transparent border border-bg-line sm:border-x-0 rounded sm:rounded-none outline-none focus:border-accent [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+                              n > 0 ? 'text-white font-semibold' : 'text-gray-400'
+                            }`}
+                          />
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            aria-label={`Increase ${q.key} ${shape}`}
+                            onClick={() => setCount(k, n + 1)}
+                            className="h-9 sm:h-7 sm:w-6 flex items-center justify-center rounded sm:rounded-none sm:rounded-r border border-bg-line text-gray-300 hover:bg-bg-elev active:bg-bg-elev"
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
                       </div>
-                    </td>
-                    {SHAPE_KEYS.map((shape) => {
-                      const k = cellKey(stat, q.key, shape)
-                      const n = draft[k] ?? 0
-                      return (
-                        <td key={shape} className="px-1">
-                          <div className="flex flex-col items-center gap-1">
-                            <ShapeGlyph
-                              shape={shape}
-                              color={meta.color}
-                              diamondColor={meta.diamondColor}
-                              cell={8}
-                            />
-                            <div className="flex items-center">
-                              <button
-                                type="button"
-                                tabIndex={-1}
-                                aria-label={`Decrease ${q.key} ${shape}`}
-                                onClick={() => setCount(k, n - 1)}
-                                className="h-7 w-6 flex items-center justify-center rounded-l border border-bg-line text-gray-300 hover:bg-bg-elev"
-                              >
-                                <Minus size={12} />
-                              </button>
-                              <input
-                                type="number"
-                                inputMode="numeric"
-                                min={0}
-                                max={MAX_COUNT}
-                                value={n === 0 ? '' : n}
-                                placeholder="0"
-                                onFocus={(e) => e.target.select()}
-                                onChange={(e) =>
-                                  setCount(k, parseInt(e.target.value, 10) || 0)
-                                }
-                                aria-label={`${q.key} ${shape} count`}
-                                className={`h-7 w-10 text-center text-sm bg-transparent border-y border-bg-line outline-none focus:border-accent [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
-                                  n > 0 ? 'text-white font-semibold' : 'text-gray-400'
-                                }`}
-                              />
-                              <button
-                                type="button"
-                                tabIndex={-1}
-                                aria-label={`Increase ${q.key} ${shape}`}
-                                onClick={() => setCount(k, n + 1)}
-                                className="h-7 w-6 flex items-center justify-center rounded-r border border-bg-line text-gray-300 hover:bg-bg-elev"
-                              >
-                                <Plus size={12} />
-                              </button>
-                            </div>
-                          </div>
-                        </td>
-                      )
-                    })}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
         </div>
 
         <div className="flex items-center justify-between gap-2">
