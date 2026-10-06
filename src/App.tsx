@@ -740,7 +740,7 @@ export default function App() {
   )
   const [fullTimeLimit, setFullTimeLimit] = usePersistedState<FullTimeLimit>(
     FULL_LIMIT_KEY,
-    { enabled: true, seconds: 30 },
+    { enabled: true, seconds: 120 },
   )
   const [profiles, setProfiles] = usePersistedState<SavedProfile[]>(
     PROFILES_KEY,
@@ -860,6 +860,13 @@ export default function App() {
     return result.boards.filter(
       (b) => b.truncated && b.placements.length === 0,
     )
+  }, [result, status.running])
+
+  // Boards cut off by the time limit that still produced a layout: the layout
+  // is the best found so far and may not be optimal.
+  const partialBoards = useMemo(() => {
+    if (!result || status.running) return []
+    return result.boards.filter((b) => b.truncated && b.placements.length > 0)
   }, [result, status.running])
 
   // Stats-summary tab data for the active tab.
@@ -1203,6 +1210,20 @@ export default function App() {
                     {timedOutBoards.length === 1 ? 'board' : 'boards'} above{' '}
                     {timedOutBoards.length === 1 ? 'is' : 'are'} empty. Raise the
                     time limit (or turn it off) and run again.
+                  </div>
+                )}
+                {partialBoards.length > 0 && (
+                  <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                    <span className="font-semibold">
+                      Time limit reached for{' '}
+                      {partialBoards
+                        .map((b) => MOUNTS[b.mountKey].name)
+                        .join(', ')}
+                      .
+                    </span>{' '}
+                    The layout shown is the best found so far and may not be
+                    optimal. Raise the time limit (or turn it off) and run again
+                    for a more thorough search.
                   </div>
                 )}
                 <header className="flex items-center justify-between gap-4">
