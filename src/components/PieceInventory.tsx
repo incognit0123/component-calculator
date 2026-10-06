@@ -17,7 +17,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { Dropdown } from 'antd'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
-import type { Piece, StatKey, StatTotals } from '../data/types'
+import type { Piece, StatTotals } from '../data/types'
 import { usePersistedState } from '../hooks/usePersistedState'
 import {
   sortByMarginalGain,
@@ -29,8 +29,7 @@ import { ConfirmDialog } from './ConfirmDialog'
 import { PieceCard } from './PieceCard'
 import { PieceEditor } from './PieceEditor'
 import { PanelShell } from './PanelShell'
-import { StatIcon } from './icons/StatIcon'
-import { STATS } from '../data/stats'
+import { PieceCountSummary } from './PieceCountSummary'
 
 // v2: collapsed-by-default (v1 was an expanded-by-default scroll box).
 const COLLAPSED_KEY = 'mount-opt:inventory-collapsed:v2'
@@ -174,13 +173,6 @@ export function PieceInventory({
   ]
 
   const pieceIds = pieces.map((p) => p.id)
-  const statCounts = pieces.reduce(
-    (acc, p) => {
-      acc[p.stat] = (acc[p.stat] ?? 0) + 1
-      return acc
-    },
-    {} as Record<StatKey, number>,
-  )
 
   return (
     <PanelShell title="Inventory">
@@ -254,21 +246,7 @@ export function PieceInventory({
                   </span>
                 )}
               </div>
-              <div className="flex flex-wrap gap-2">
-                {STATS.filter((st) => statCounts[st.key] > 0).map((st) => (
-                  <span
-                    key={st.key}
-                    className="flex items-center gap-1.5 rounded-full border border-bg-line bg-bg-elev px-2 py-1 text-xs text-gray-200"
-                    title={st.short}
-                  >
-                    <StatIcon stat={st.key} size={16} />
-                    {st.short}
-                    <span className="text-white font-semibold tabular-nums">
-                      {statCounts[st.key]}
-                    </span>
-                  </span>
-                ))}
-              </div>
+              <PieceCountSummary pieces={pieces} />
             </div>
           ) : (
             <DndContext

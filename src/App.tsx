@@ -7,7 +7,7 @@ import type { FullTimeLimit, OptimizeScope } from './components/OptimizerPanel'
 import { BoardView } from './components/BoardView'
 import { MountBoardPreview } from './components/MountBoardPreview'
 import { StatsSummary, type StatsTab } from './components/StatsSummary'
-import { PieceCard } from './components/PieceCard'
+import { UnusedPiecesSection } from './components/UnusedPiecesSection'
 import { PanelShell } from './components/PanelShell'
 import {
   MAX_MOUNT_LEVEL,
@@ -852,6 +852,17 @@ export default function App() {
 
   const displayedMount = displayedBoard ? MOUNTS[displayedBoard.mountKey] : null
 
+  // Pieces the optimizer left unplaced, resolved against the current inventory
+  // (pieces deleted since the run simply drop out, matching the frozen result).
+  const unusedPieces = useMemo(() => {
+    if (!result) return []
+    const byId = new Map(pieces.map((p) => [p.id, p]))
+    return result.unusedPieceIds.flatMap((id) => {
+      const piece = byId.get(id)
+      return piece ? [piece] : []
+    })
+  }, [result, pieces])
+
   // Boards the time limit was too low to find *any* layout for (cut off before
   // placing a single piece). Only meaningful on the final result — while the
   // optimizer is still running, not-yet-solved boards are legitimately empty.
@@ -1314,19 +1325,8 @@ export default function App() {
                   />
                 )}
 
-                {!status.running && result.unusedPieceIds.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-white mb-2">
-                      Unused pieces ({result.unusedPieceIds.length})
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                      {result.unusedPieceIds.map((id) => {
-                        const piece = pieces.find((p) => p.id === id)
-                        if (!piece) return null
-                        return <PieceCard key={id} piece={piece} dim />
-                      })}
-                    </div>
-                  </div>
+                {!status.running && (
+                  <UnusedPiecesSection pieces={unusedPieces} />
                 )}
 
                 <div className="text-[11px] text-gray-500 text-right">
