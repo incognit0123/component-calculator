@@ -219,6 +219,18 @@ export function PieceInventory({
           >
             + Add piece
           </button>
+          {pieces.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setCollapsed((c) => !c)}
+              aria-label={collapsed ? 'Expand inventory' : 'Collapse inventory'}
+              aria-expanded={!collapsed}
+              title={collapsed ? 'Expand inventory' : 'Collapse inventory'}
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-[#151922] bg-[#2f354a] text-gray-300 hover:bg-[#3b435d] hover:text-white transition"
+            >
+              {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+            </button>
+          )}
         </div>
       </header>
 
