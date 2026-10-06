@@ -73,14 +73,14 @@ export function StatsSummary({
       )}
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-[11px] sm:text-sm">
           <thead>
             <tr className="text-gray-400 text-xs">
-              <th className="text-left px-2 py-1 font-normal">Stat</th>
-              <th className="text-right px-2 py-1 font-normal">Before</th>
-              <th className="text-right px-2 py-1 font-normal">+ Pieces</th>
-              <th className="text-right px-2 py-1 font-normal">{secondaryLabel}</th>
-              <th className="text-right px-2 py-1 font-normal">After</th>
+              <th className="text-left px-0.5 sm:px-2 py-1 font-normal">Stat</th>
+              <th className="text-right px-0.5 sm:px-2 py-1 font-normal whitespace-nowrap">Before</th>
+              <th className="text-right px-0.5 sm:px-2 py-1 font-normal whitespace-nowrap">+ Pieces</th>
+              <th className="text-right px-0.5 sm:px-2 py-1 font-normal leading-tight">{secondaryLabel}</th>
+              <th className="text-right px-0.5 sm:px-2 py-1 font-normal whitespace-nowrap">After</th>
             </tr>
           </thead>
           <tbody>
@@ -91,22 +91,28 @@ export function StatsSummary({
               const after = before + piece + secondary
               return (
                 <tr key={s.key} className="border-t border-bg-line">
-                  <td className="px-2 py-1.5">
-                    <span className="flex items-center gap-2">
+                  <td className="px-0.5 sm:px-2 py-1.5">
+                    <span className="flex items-center gap-1.5 sm:gap-2">
                       <StatIcon stat={s.key} size={18} />
-                      <span className="text-gray-200">{s.name}</span>
+                      {/* Short names on phones so the five columns fit without scrolling. */}
+                      <span className="text-gray-200 sm:hidden">{s.short}</span>
+                      <span className="hidden text-gray-200 sm:inline">
+                        {s.name}
+                      </span>
                     </span>
                   </td>
-                  <td className="px-2 py-1.5 text-right text-gray-400">
+                  <td className="px-0.5 sm:px-2 py-1.5 text-right text-gray-400 whitespace-nowrap">
                     {fmt(before, 1)}%
                   </td>
-                  <td className="px-2 py-1.5 text-right text-accent">
+                  <td className="px-0.5 sm:px-2 py-1.5 text-right text-accent whitespace-nowrap">
                     {piece > 0 ? `+${fmt(piece, dp)}%` : '—'}
                   </td>
-                  <td className={`px-2 py-1.5 text-right ${secondaryColor}`}>
+                  <td
+                    className={`px-0.5 sm:px-2 py-1.5 text-right whitespace-nowrap ${secondaryColor}`}
+                  >
                     {secondary > 0 ? `+${fmt(secondary, dp)}%` : '—'}
                   </td>
-                  <td className="px-2 py-1.5 text-right text-white font-medium">
+                  <td className="px-0.5 sm:px-2 py-1.5 text-right text-white font-medium whitespace-nowrap">
                     {fmt(after, dp)}%
                   </td>
                 </tr>
