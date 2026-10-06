@@ -64,6 +64,11 @@ export interface SolveOptions {
   optimalityTolerance?: number
   /** DFS node cap for refining one mix's piece selection (default 2000). */
   selectionNodeBudget?: number
+  /**
+   * Stop after this many evaluated mixes in a row that don't beat the best by
+   * more than `optimalityTolerance` (of the gain). Default 100.
+   */
+  patience?: number
 }
 
 const YIELD_INTERVAL_MS = 8
@@ -75,11 +80,16 @@ const PROGRESS_INTERVAL_MS = 400
  */
 const NEAR_FULL_DEPTH = 2
 /**
- * The greedy estimate can undershoot the exact selection score (observed worst
- * case ~4.4%, see greedy.test.ts). The stop rule inflates estimates by this
- * factor so a mix whose true score is higher than its estimate isn't skipped.
+ * The greedy estimate can undershoot the exact selection (observed worst case
+ * ~1% of the board's gain, see greedy.test.ts). The stop rule inflates each
+ * estimate's *gain* by this factor so a mix whose true gain is higher than its
+ * estimate isn't skipped. Measured against the gain, not the total score, so it
+ * keeps its meaning as running stats grow and pieces count for less (low sync
+ * rate): a fixed percentage of the whole score would swallow every candidate.
  */
-const GREEDY_SLACK = 1.015
+const GAIN_SLACK = 1.02
+/** Default number of non-improving evaluated mixes before giving up. */
+const DEFAULT_PATIENCE = 100
 /** DFS node cap for the exact selection refinement of one mix. */
 const SELECTION_NODE_BUDGET = 2_000
 
@@ -130,6 +140,7 @@ export async function solve(
     pieceBuffMultiplier,
     optimalityTolerance: opts.optimalityTolerance ?? 0.01,
     selectionNodeBudget: opts.selectionNodeBudget ?? SELECTION_NODE_BUDGET,
+    patience: opts.patience ?? DEFAULT_PATIENCE,
     maxBonusLines: maxBonusLinesForLevel(mountLevel, tiers),
     geometricMaxPieces,
     totalCells,
@@ -168,6 +179,7 @@ interface SolveContext {
   pieceBuffMultiplier: number
   optimalityTolerance: number
   selectionNodeBudget: number
+  patience: number
   maxBonusLines: number
   geometricMaxPieces: number
   totalCells: number
@@ -289,15 +301,23 @@ async function solveFullInventory(
   ctx.distProcessed = 0
 
   let best: BoardSolveResult | null = null
-  let bestScore = formula(ctx.currentStats)
+  // Everything below is judged on the improvement over this board's starting
+  // score, so the tolerance scales with how much the pieces can actually add.
+  const startScore = formula(ctx.currentStats)
+  let bestScore = startScore
   const threshold = 1 + ctx.optimalityTolerance
+  /** Evaluated mixes in a row that failed to meaningfully beat the best. */
+  let sinceImprovement = 0
 
   for (const entry of queue) {
     if (await maybeYield(ctx)) break
 
-    // Sorted descending: nothing after this can beat the best (within
+    // Sorted descending: nothing after this can beat the best gain (within
     // tolerance), so count the rest as processed and stop.
-    if (entry.ub * GREEDY_SLACK <= bestScore * threshold) {
+    if (
+      (entry.ub - startScore) * GAIN_SLACK <=
+      (bestScore - startScore) * threshold
+    ) {
       ctx.distProcessed = ctx.distTotal
       maybeProgress(ctx)
       break
@@ -332,9 +352,27 @@ async function solveFullInventory(
     ctx.explored++
 
     if (selection.score > bestScore) {
+      // "Meaningful" = beats the best gain by more than the tolerance. Smaller
+      // wins are still kept, but don't reset the patience counter.
+      const meaningful =
+        selection.score - startScore >
+        (bestScore - startScore) * threshold
       bestScore = selection.score
       best = buildResult(ctx, selection.picks, tiling.slots, tiling.lines)
       ctx.latestBest = best
+      if (meaningful) sinceImprovement = 0
+      else sinceImprovement++
+    } else {
+      sinceImprovement++
+    }
+    // Patience stop. On later boards the leftover pieces are weak and similar,
+    // so huge numbers of mixes score within any fixed margin of the best and the
+    // bound alone can't prune them. Mixes are tried best-first, so a long run
+    // of evaluated mixes without a meaningful gain means the rest won't matter.
+    if (sinceImprovement >= ctx.patience) {
+      ctx.distProcessed = ctx.distTotal
+      maybeProgress(ctx)
+      break
     }
     maybeProgress(ctx)
   }

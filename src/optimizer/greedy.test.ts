@@ -38,7 +38,7 @@ describe('greedy estimator', () => {
       expect(est).toBeLessThanOrEqual(exact * (1 + 1e-9))
       worst = Math.min(worst, est / exact)
     }
-    // Greedy's worst-case undershoot; solve.ts's GREEDY_SLACK must cover this.
+    // Greedy's worst-case undershoot; solve.ts's GAIN_SLACK must cover this.
     expect(worst).toBeGreaterThan(0)
     expect(worst).toBeGreaterThanOrEqual(0.985)
   })
