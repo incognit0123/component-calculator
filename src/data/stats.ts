@@ -84,3 +84,16 @@ export function zeroStats(): StatTotals {
     toBosses: 0,
   }
 }
+
+/**
+ * Preference order among the three debuff-conditional stats, which share one
+ * additive damage pool. When options score equally, prefer the stat that is
+ * easiest to apply in practice: chilled, then poisoned, then weakened.
+ */
+export const DEBUFF_PRIORITY: StatKey[] = ['toChilled', 'toPoisoned', 'toWeakened']
+
+/** Rank of a stat for tie-breaking: lower is preferred; non-debuffs sort last. */
+export function debuffRank(stat: StatKey): number {
+  const i = DEBUFF_PRIORITY.indexOf(stat)
+  return i === -1 ? DEBUFF_PRIORITY.length : i
+}

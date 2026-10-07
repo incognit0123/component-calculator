@@ -47,6 +47,8 @@ score =
 
 The three debuff-conditional stats (weakened / poisoned / chilled) sum **inside a single `(1 + x/100)` factor** — they compete additively with each other, while the other five each get their own multiplicative factor.
 
+**Tie-break priority:** when options score equally, prefer `toChilled`, then `toPoisoned`, then `toWeakened` (easiest to apply first). `DEBUFF_PRIORITY` in `src/data/stats.ts` is the source of truth; `selectPieces` applies it (and `greedy.ts` orders its stat list by it so its seed picks agree) and is otherwise independent of inventory order, so reruns on the same pieces give the same result.
+
 ### Line-clear bonuses (`applyLineBonuses` in `src/optimizer/scoring.ts`)
 
 A "line" is a fully occupied **row** (columns don't count). Bonuses are cumulative — each tier stacks on top of lower tiers. The exact tier table varies per mount; the canonical tables live in `src/data/mounts.ts` and are passed in via the `tiers: LineBonusTier[]` parameter — **never duplicate these values**.

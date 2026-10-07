@@ -51,4 +51,23 @@ describe('greedy estimator', () => {
     dist.T = 1
     expect(createGreedyEstimator(inv, stats, [], 0, 1).estimate(dist, 0)).toBe(0)
   })
+
+  it('breaks equal-value ties toward chilled > poisoned > weakened', () => {
+    const mk = (id: string, stat: Piece['stat']): Piece => ({
+      id,
+      shape: 'O',
+      quality: 'legend',
+      stat,
+    })
+    const dist = emptyShapeCounts()
+    dist.O = 1
+    const first = (inv: Piece[]) =>
+      createGreedyEstimator(inv, stats, [], 0, 1).pick(dist, 0).picks[0].stat
+    const w = mk('w', 'toWeakened')
+    const p = mk('p', 'toPoisoned')
+    const c = mk('c', 'toChilled')
+    expect(first([w, p, c])).toBe('toChilled')
+    expect(first([c, p, w])).toBe('toChilled')
+    expect(first([w, p])).toBe('toPoisoned')
+  })
 })

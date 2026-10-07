@@ -1,6 +1,7 @@
 import { BUFF_TABLE } from '../data/buffTable'
 import type { LineBonusTier, MountLevel } from '../data/lineBonuses'
 import { SHAPE_KEYS } from '../data/shapes'
+import { debuffRank } from '../data/stats'
 import type { Piece, ShapeKey, StatKey, StatTotals } from '../data/types'
 import { applyLineBonuses, cloneStats, formula } from './scoring'
 import type { ShapeCounts } from './tiling'
@@ -32,7 +33,12 @@ const FACTOR_OF: Record<StatKey, number> = {
   toChilled: 5,
 }
 const NUM_FACTORS = 6
-const STAT_LIST = Object.keys(FACTOR_OF) as StatKey[]
+// Debuffs first in priority order (chilled > poisoned > weakened): every loop
+// below keeps the first of equal candidates, so this makes ties favor chilled.
+// Array.sort is stable, so non-debuff stats keep their relative order.
+const STAT_LIST = (Object.keys(FACTOR_OF) as StatKey[]).sort(
+  (a, b) => debuffRank(a) - debuffRank(b),
+)
 
 function factorsOf(s: StatTotals): Float64Array {
   const f = new Float64Array(NUM_FACTORS)
