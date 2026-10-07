@@ -86,6 +86,11 @@ export function CurrentStatsPanel({ stats, onChange, onReset }: Props) {
 
   return (
     <PanelShell title="Current stats">
+      <p className="text-xs text-gray-400 -mt-2 mb-3">
+        Enter your stats <span className="text-gray-300">without</span> any mount
+        pieces or line-clear bonuses. The optimizer layers the pieces and line
+        bonuses on top.
+      </p>
       <header className="flex items-center justify-end mb-4">
         <input
           ref={fileInputRef}

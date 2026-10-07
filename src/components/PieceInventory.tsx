@@ -24,13 +24,15 @@ import {
   sortByQualityShape,
   sortByShapeQuality,
 } from '../utils/sortPieces'
+import { BulkPieceEditor } from './BulkPieceEditor'
+import { ConfirmDialog } from './ConfirmDialog'
 import { PieceCard } from './PieceCard'
 import { PieceEditor } from './PieceEditor'
 import { PanelShell } from './PanelShell'
+import { PieceCountSummary } from './PieceCountSummary'
 
-const COLLAPSED_KEY = 'mount-opt:inventory-collapsed:v1'
-// 4 rows of 140px-min tiles + 3 row-gaps of 12px
-const COLLAPSED_MAX_HEIGHT = 4 * 140 + 3 * 12
+// v2: collapsed-by-default (v1 was an expanded-by-default scroll box).
+const COLLAPSED_KEY = 'mount-opt:inventory-collapsed:v2'
 
 interface Props {
   pieces: Piece[]
@@ -89,9 +91,11 @@ export function PieceInventory({
 }: Props) {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<Piece | null>(null)
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
   const [collapsed, setCollapsed] = usePersistedState<boolean>(
     COLLAPSED_KEY,
-    false,
+    true,
   )
 
   // Small drag-activation distance avoids triggering drags on stray click
@@ -123,11 +127,11 @@ export function PieceInventory({
 
   const handleClear = () => {
     if (pieces.length === 0) return
-    if (
-      window.confirm(`Clear all ${pieces.length} piece${pieces.length === 1 ? '' : 's'}?`)
-    ) {
-      onChange([])
-    }
+    setClearConfirmOpen(true)
+  }
+  const confirmClear = () => {
+    setClearConfirmOpen(false)
+    onChange([])
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -173,7 +177,7 @@ export function PieceInventory({
   return (
     <PanelShell title="Inventory">
       <header className="flex items-center justify-end -mt-2 mb-3">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2 [&_button]:whitespace-nowrap">
           <button
             type="button"
             onClick={handleClear}
@@ -197,11 +201,30 @@ export function PieceInventory({
           </Dropdown>
           <button
             type="button"
+            onClick={() => setBulkOpen(true)}
+            className="app-button bg-[#2f354a] hover:bg-[#3b435d]"
+          >
+            Bulk edit
+          </button>
+          <button
+            type="button"
             onClick={openAdd}
             className="app-button"
           >
             + Add piece
           </button>
+          {pieces.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setCollapsed((c) => !c)}
+              aria-label={collapsed ? 'Expand inventory' : 'Collapse inventory'}
+              aria-expanded={!collapsed}
+              title={collapsed ? 'Expand inventory' : 'Collapse inventory'}
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-[#151922] bg-[#2f354a] text-gray-300 hover:bg-[#3b435d] hover:text-white transition"
+            >
+              {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+            </button>
+          )}
         </div>
       </header>
 
@@ -211,10 +234,21 @@ export function PieceInventory({
         </p>
       ) : (
         <>
-          <div
-            className={collapsed ? 'overflow-y-auto pr-1' : ''}
-            style={collapsed ? { maxHeight: COLLAPSED_MAX_HEIGHT } : undefined}
-          >
+          {collapsed ? (
+            <div className="panel-inner p-3 flex flex-col gap-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                <span className="text-sm text-white">
+                  {pieces.length} piece{pieces.length === 1 ? '' : 's'}
+                </span>
+                {unusedIds && unusedIds.size > 0 && (
+                  <span className="text-xs text-gray-400">
+                    {unusedIds.size} not used in the last result
+                  </span>
+                )}
+              </div>
+              <PieceCountSummary pieces={pieces} />
+            </div>
+          ) : (
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
@@ -234,21 +268,52 @@ export function PieceInventory({
                 </div>
               </SortableContext>
             </DndContext>
-          </div>
+          )}
           <div className="flex justify-center mt-3">
             <button
               type="button"
               onClick={() => setCollapsed((c) => !c)}
-              aria-label={collapsed ? 'Expand inventory' : 'Collapse inventory'}
-              title={collapsed ? 'Expand inventory' : 'Collapse inventory'}
-              className="flex items-center justify-center w-8 h-8 rounded-full border border-[#151922] bg-[#2f354a] text-gray-300 hover:bg-[#3b435d] hover:text-white transition"
+              aria-expanded={!collapsed}
+              className="flex items-center gap-1.5 rounded-full border border-[#151922] bg-[#2f354a] px-3 py-1.5 text-xs text-gray-300 hover:bg-[#3b435d] hover:text-white transition"
             >
-              {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+              {collapsed ? (
+                <>
+                  <ChevronDown size={14} />
+                  Show all {pieces.length} piece{pieces.length === 1 ? '' : 's'}
+                </>
+              ) : (
+                <>
+                  <ChevronUp size={14} />
+                  Hide pieces
+                </>
+              )}
             </button>
           </div>
         </>
       )}
 
+      <ConfirmDialog
+        open={clearConfirmOpen}
+        title={`Clear all ${pieces.length} piece${pieces.length === 1 ? '' : 's'}?`}
+        confirmLabel="Clear all"
+        destructive
+        onConfirm={confirmClear}
+        onCancel={() => setClearConfirmOpen(false)}
+      >
+        <p>
+          This removes every piece from your inventory and can't be undone.
+        </p>
+        <p className="text-gray-400">
+          Tip: use <span className="text-white">Export</span> at the top of the
+          page first if you want a copy you can import back.
+        </p>
+      </ConfirmDialog>
+      <BulkPieceEditor
+        open={bulkOpen}
+        pieces={pieces}
+        onClose={() => setBulkOpen(false)}
+        onApply={onChange}
+      />
       <PieceEditor
         open={editorOpen}
         initial={editing}

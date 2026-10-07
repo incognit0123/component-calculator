@@ -7,7 +7,7 @@ import type { FullTimeLimit, OptimizeScope } from './components/OptimizerPanel'
 import { BoardView } from './components/BoardView'
 import { MountBoardPreview } from './components/MountBoardPreview'
 import { StatsSummary, type StatsTab } from './components/StatsSummary'
-import { PieceCard } from './components/PieceCard'
+import { UnusedPiecesSection } from './components/UnusedPiecesSection'
 import { PanelShell } from './components/PanelShell'
 import {
   MAX_MOUNT_LEVEL,
@@ -740,7 +740,7 @@ export default function App() {
   )
   const [fullTimeLimit, setFullTimeLimit] = usePersistedState<FullTimeLimit>(
     FULL_LIMIT_KEY,
-    { enabled: true, seconds: 30 },
+    { enabled: true, seconds: 120 },
   )
   const [profiles, setProfiles] = usePersistedState<SavedProfile[]>(
     PROFILES_KEY,
@@ -852,6 +852,17 @@ export default function App() {
 
   const displayedMount = displayedBoard ? MOUNTS[displayedBoard.mountKey] : null
 
+  // Pieces the optimizer left unplaced, resolved against the current inventory
+  // (pieces deleted since the run simply drop out, matching the frozen result).
+  const unusedPieces = useMemo(() => {
+    if (!result) return []
+    const byId = new Map(pieces.map((p) => [p.id, p]))
+    return result.unusedPieceIds.flatMap((id) => {
+      const piece = byId.get(id)
+      return piece ? [piece] : []
+    })
+  }, [result, pieces])
+
   // Boards the time limit was too low to find *any* layout for (cut off before
   // placing a single piece). Only meaningful on the final result — while the
   // optimizer is still running, not-yet-solved boards are legitimately empty.
@@ -860,6 +871,13 @@ export default function App() {
     return result.boards.filter(
       (b) => b.truncated && b.placements.length === 0,
     )
+  }, [result, status.running])
+
+  // Boards cut off by the time limit that still produced a layout: the layout
+  // is the best found so far and may not be optimal.
+  const partialBoards = useMemo(() => {
+    if (!result || status.running) return []
+    return result.boards.filter((b) => b.truncated && b.placements.length > 0)
   }, [result, status.running])
 
   // Stats-summary tab data for the active tab.
@@ -1140,8 +1158,12 @@ export default function App() {
               pieces={pieces}
               currentStats={currentStats}
               onChange={setPieces}
+              // "Unused" only means something once a run has finished; mid-run
+              // it's just the not-yet-placed pieces, so don't surface it.
               unusedIds={
-                new Set(result?.unusedPieceIds ?? [])
+                status.running
+                  ? undefined
+                  : new Set(result?.unusedPieceIds ?? [])
               }
             />
             <MountPanel
@@ -1174,6 +1196,10 @@ export default function App() {
               fractionComplete={status.progress?.fractionComplete}
               boardIndex={status.progress?.boardIndex}
               progressBoardCount={status.progress?.boardCount}
+              currentMountKey={status.progress?.currentMountKey}
+              finishedMountKeys={status.progress?.partial.boards
+                .filter((b) => b.mountKey !== status.progress?.currentMountKey)
+                .map((b) => b.mountKey)}
               progressLabel={
                 status.error
                   ? `Error: ${status.error}`
@@ -1203,6 +1229,20 @@ export default function App() {
                     {timedOutBoards.length === 1 ? 'board' : 'boards'} above{' '}
                     {timedOutBoards.length === 1 ? 'is' : 'are'} empty. Raise the
                     time limit (or turn it off) and run again.
+                  </div>
+                )}
+                {partialBoards.length > 0 && (
+                  <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                    <span className="font-semibold">
+                      Time limit reached for{' '}
+                      {partialBoards
+                        .map((b) => MOUNTS[b.mountKey].name)
+                        .join(', ')}
+                      .
+                    </span>{' '}
+                    The layout shown is the best found so far and may not be
+                    optimal. Raise the time limit (or turn it off) and run again
+                    for a more thorough search.
                   </div>
                 )}
                 <header className="flex items-center justify-between gap-4">
@@ -1285,19 +1325,8 @@ export default function App() {
                   />
                 )}
 
-                {result.unusedPieceIds.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-white mb-2">
-                      Unused pieces ({result.unusedPieceIds.length})
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                      {result.unusedPieceIds.map((id) => {
-                        const piece = pieces.find((p) => p.id === id)
-                        if (!piece) return null
-                        return <PieceCard key={id} piece={piece} dim />
-                      })}
-                    </div>
-                  </div>
+                {!status.running && (
+                  <UnusedPiecesSection pieces={unusedPieces} />
                 )}
 
                 <div className="text-[11px] text-gray-500 text-right">

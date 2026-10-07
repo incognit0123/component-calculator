@@ -32,6 +32,8 @@ export interface SolveAllOptions {
    * against board 2 with another full `timeBudgetMs`, and so on.
    */
   timeBudgetMs?: number
+  /** Forwarded to each board's `solve()`; see `SolveOptions.patience`. */
+  patience?: number
 }
 
 /**
@@ -167,6 +169,7 @@ export async function solveAll(
       pieceBuffMultiplier: multiplier,
       disableLineBonuses: !isEquipped,
       timeBudgetMs: opts.timeBudgetMs,
+      patience: opts.patience,
       isCancelled: opts.isCancelled,
       onProgress: onBoardProgress,
     })
