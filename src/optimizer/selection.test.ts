@@ -191,4 +191,36 @@ describe('selectPieces', () => {
       ]),
     )
   })
+
+  describe('debuff priority (chilled > poisoned > weakened)', () => {
+    const pick = (inv: Piece[]) =>
+      selectPieces(inv, counts({ O: 1 }), 0, zeroStats(), ES_TIERS, 0).picks.map(
+        (p) => p.stat,
+      )
+
+    it('prefers chilled over poisoned over weakened on equal value', () => {
+      const w = mk('O', 'legend', 'toWeakened')
+      const p = mk('O', 'legend', 'toPoisoned')
+      const c = mk('O', 'legend', 'toChilled')
+      expect(pick([w, p, c])).toEqual(['toChilled'])
+      expect(pick([w, p])).toEqual(['toPoisoned'])
+    })
+
+    it('is independent of inventory order', () => {
+      const inv = [
+        mk('O', 'legend', 'toWeakened'),
+        mk('O', 'legend', 'toPoisoned'),
+        mk('O', 'legend', 'toChilled'),
+      ]
+      for (const order of [inv, [...inv].reverse(), [inv[1], inv[2], inv[0]]]) {
+        expect(pick(order)).toEqual(['toChilled'])
+      }
+    })
+
+    it('does not override a genuinely higher-scoring piece', () => {
+      const w = mk('O', 'legend', 'toWeakened')
+      const c = mk('O', 'good', 'toChilled')
+      expect(pick([c, w])).toEqual(['toWeakened'])
+    })
+  })
 })

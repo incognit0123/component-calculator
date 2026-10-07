@@ -1,6 +1,7 @@
 import { BUFF_TABLE } from '../data/buffTable'
 import type { LineBonusTier, MountLevel } from '../data/lineBonuses'
 import { SHAPE_KEYS } from '../data/shapes'
+import { DEBUFF_PRIORITY, debuffRank } from '../data/stats'
 import type {
   Piece,
   QualityTier,
@@ -17,6 +18,15 @@ interface Bucket {
   quality: QualityTier
   buff: number
   pieces: Piece[]
+}
+
+// Scores within this relative tolerance are treated as ties. Float sums taken in
+// different orders differ by ~1e-16, which would otherwise make the winner
+// depend on traversal order.
+const TIE_EPS = 1e-9
+
+function isTie(a: number, b: number): boolean {
+  return Math.abs(a - b) <= TIE_EPS * Math.max(1, Math.abs(a), Math.abs(b))
 }
 
 export interface SelectionResult {
@@ -77,6 +87,11 @@ export function selectPieces(
     g.pieces.push(p)
   }
   const buckets = Array.from(groups.values())
+  // Make the result independent of inventory order: pieces within a bucket are
+  // interchangeable, so take them in a fixed (id) order.
+  for (const b of buckets) {
+    b.pieces.sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0))
+  }
 
   // Order DFS by descending standalone marginal under the line-bonused stats.
   // Doesn't affect correctness — only how fast we find a strong best-so-far,
@@ -86,13 +101,40 @@ export function selectPieces(
     s[b.stat] += b.buff
     return formula(s) - baseScore
   }
-  buckets.sort((a, b) => marginalAtBase(b) - marginalAtBase(a))
+  const marginals = new Map(buckets.map((b) => [b, marginalAtBase(b)]))
+  buckets.sort((a, b) => {
+    const ma = marginals.get(a)!
+    const mb = marginals.get(b)!
+    if (!isTie(ma, mb)) return mb - ma
+    // Ties: debuff priority (chilled > poisoned > weakened), then a fixed
+    // total order so the DFS visits buckets identically for any inventory order.
+    return (
+      debuffRank(a.stat) - debuffRank(b.stat) ||
+      (a.stat < b.stat ? -1 : a.stat > b.stat ? 1 : 0) ||
+      (a.quality < b.quality ? -1 : a.quality > b.quality ? 1 : 0) ||
+      SHAPE_KEYS.indexOf(a.shape) - SHAPE_KEYS.indexOf(b.shape)
+    )
+  })
 
   const slotsLeft: ShapeCounts = { ...dist }
   const accumStats = cloneStats(baseStats)
   const pickCounts: number[] = new Array(buckets.length).fill(0)
   let bestScore = baseScore
   let bestPickCounts: number[] = pickCounts.slice()
+  let bestDebuffs = debuffVector(baseStats)
+
+  /** Debuff totals in priority order; compared lexicographically on ties. */
+  function debuffVector(st: StatTotals): number[] {
+    return DEBUFF_PRIORITY.map((k) => st[k])
+  }
+
+  /** True if `a` favors higher-priority debuffs than `b` (more chilled first). */
+  function prefersDebuffs(a: number[], b: number[]): boolean {
+    for (let i = 0; i < a.length; i++) {
+      if (!isTie(a[i], b[i])) return a[i] > b[i]
+    }
+    return false
+  }
 
   function totalSlotsLeft(): number {
     let n = 0
@@ -143,14 +185,23 @@ export function selectPieces(
   function dfs(idx: number): void {
     if (totalSlotsLeft() === 0) {
       const score = formula(accumStats)
-      if (score > bestScore) {
+      if (!isTie(score, bestScore) && score > bestScore) {
         bestScore = score
         bestPickCounts = pickCounts.slice()
+        bestDebuffs = debuffVector(accumStats)
+      } else if (isTie(score, bestScore)) {
+        const dv = debuffVector(accumStats)
+        if (prefersDebuffs(dv, bestDebuffs)) {
+          bestPickCounts = pickCounts.slice()
+          bestDebuffs = dv
+          bestScore = Math.max(bestScore, score)
+        }
       }
       return
     }
     if (idx >= buckets.length) return
-    if (upperBound(idx) <= bestScore) return
+    const ub = upperBound(idx)
+    if (ub < bestScore && !isTie(ub, bestScore)) return
 
     const bucket = buckets[idx]
     const maxPick = Math.min(bucket.pieces.length, slotsLeft[bucket.shape])
