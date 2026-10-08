@@ -111,3 +111,8 @@ The optimizer exploits **monotonicity** (every buff is non-negative, line bonuse
 - Enums and namespaces are disallowed — use union string literal types (`type Foo = 'a' | 'b'`).
 
 `vite.config.ts` imports `defineConfig` from `vitest/config` (not `vite`) so the `test` block is typed.
+
+## Commits and pull requests
+
+- Never add Claude or AI attribution: no `Co-Authored-By: Claude` trailers, no "Generated with Claude Code" lines, and no mention of Claude as an author or contributor in commit messages, PR titles or descriptions, or files.
+- Write commit messages and PR descriptions as plain text, with no attribution footer.
