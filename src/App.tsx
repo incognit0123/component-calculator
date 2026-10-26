@@ -1262,6 +1262,14 @@ export default function App() {
                     for a more thorough search.
                   </div>
                 )}
+                {/* Stale: we can't tell which pieces were removed or from which
+                    board, so grey out everything derived from the old run. */}
+                <div
+                  className={`flex flex-col gap-4 transition-opacity ${
+                    resultStale ? 'opacity-40 grayscale' : ''
+                  }`}
+                  aria-label={resultStale ? 'Out-of-date result' : undefined}
+                >
                 <header className="flex items-center justify-between gap-4">
                   <div>
                     <h2 className="sr-only">Result</h2>
@@ -1345,6 +1353,7 @@ export default function App() {
                 {!status.running && (
                   <UnusedPiecesSection pieces={unusedPieces} />
                 )}
+                </div>
 
                 <div className="text-[11px] text-gray-500 text-right">
                   {result.elapsedMs.toFixed(0)}ms
