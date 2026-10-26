@@ -39,6 +39,8 @@ interface Props {
   currentStats: StatTotals
   onChange: (pieces: Piece[]) => void
   unusedIds?: Set<string>
+  /** Inventory no longer matches the last result; per-piece usage is unreliable. */
+  resultStale?: boolean
 }
 
 interface SortableCardProps {
@@ -88,6 +90,7 @@ export function PieceInventory({
   currentStats,
   onChange,
   unusedIds,
+  resultStale,
 }: Props) {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<Piece | null>(null)
@@ -228,6 +231,12 @@ export function PieceInventory({
         </div>
       </header>
 
+      {resultStale && !collapsed && (
+        <p className="text-xs text-amber-300 mb-2">
+          Inventory changed since the last run — run again to refresh the result.
+        </p>
+      )}
+
       {pieces.length === 0 ? (
         <p className="panel-inner text-sm text-gray-400 py-6 text-center">
           No pieces yet. Click <span className="text-white">Add piece</span> to build your inventory.
@@ -240,7 +249,11 @@ export function PieceInventory({
                 <span className="text-sm text-white">
                   {pieces.length} piece{pieces.length === 1 ? '' : 's'}
                 </span>
-                {unusedIds && unusedIds.size > 0 && (
+                {resultStale ? (
+                  <span className="text-xs text-amber-300">
+                    Changed since last run — run again
+                  </span>
+                ) : unusedIds && unusedIds.size > 0 && (
                   <span className="text-xs text-gray-400">
                     {unusedIds.size} not used in the last result
                   </span>
@@ -260,7 +273,7 @@ export function PieceInventory({
                     <SortablePieceCard
                       key={p.id}
                       piece={p}
-                      dim={unusedIds?.has(p.id)}
+                      dim={!resultStale && unusedIds?.has(p.id)}
                       onEdit={() => openEdit(p)}
                       onDelete={() => handleDelete(p.id)}
                     />
@@ -308,12 +321,14 @@ export function PieceInventory({
           page first if you want a copy you can import back.
         </p>
       </ConfirmDialog>
-      <BulkPieceEditor
-        open={bulkOpen}
-        pieces={pieces}
-        onClose={() => setBulkOpen(false)}
-        onApply={onChange}
-      />
+      {bulkOpen && (
+        <BulkPieceEditor
+          pieces={pieces}
+          onClose={() => setBulkOpen(false)}
+          onApply={onChange}
+          unusedIds={unusedIds}
+        />
+      )}
       <PieceEditor
         open={editorOpen}
         initial={editing}

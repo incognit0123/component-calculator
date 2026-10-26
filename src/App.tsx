@@ -7,6 +7,7 @@ import type { FullTimeLimit, OptimizeScope } from './components/OptimizerPanel'
 import { BoardView } from './components/BoardView'
 import { MountBoardPreview } from './components/MountBoardPreview'
 import { StatsSummary, type StatsTab } from './components/StatsSummary'
+import { isResultStale } from './utils/resultStale'
 import { UnusedPiecesSection } from './components/UnusedPiecesSection'
 import { PanelShell } from './components/PanelShell'
 import {
@@ -863,6 +864,12 @@ export default function App() {
     })
   }, [result, pieces])
 
+  // Inventory edited since the run: the frozen result no longer matches it.
+  const resultStale = useMemo(
+    () => (result && !status.running ? isResultStale(result, pieces) : false),
+    [result, pieces, status.running],
+  )
+
   // Boards the time limit was too low to find *any* layout for (cut off before
   // placing a single piece). Only meaningful on the final result — while the
   // optimizer is still running, not-yet-solved boards are legitimately empty.
@@ -1158,6 +1165,7 @@ export default function App() {
               pieces={pieces}
               currentStats={currentStats}
               onChange={setPieces}
+              resultStale={resultStale}
               // "Unused" only means something once a run has finished; mid-run
               // it's just the not-yet-placed pieces, so don't surface it.
               unusedIds={
@@ -1214,6 +1222,15 @@ export default function App() {
                 {status.running && (
                   <div className="text-xs text-accent italic">
                     Preliminary result (still working)…
+                  </div>
+                )}
+                {resultStale && (
+                  <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                    <span className="font-semibold">
+                      Inventory changed since this result.
+                    </span>{' '}
+                    The board and stats below reflect the old inventory and may
+                    not match your pieces. Run again to update them.
                   </div>
                 )}
                 {timedOutBoards.length > 0 && (
