@@ -7,6 +7,7 @@ import type { FullTimeLimit, OptimizeScope } from './components/OptimizerPanel'
 import { BoardView } from './components/BoardView'
 import { MountBoardPreview } from './components/MountBoardPreview'
 import { StatsSummary, type StatsTab } from './components/StatsSummary'
+import { isResultStale } from './utils/resultStale'
 import { UnusedPiecesSection } from './components/UnusedPiecesSection'
 import { PanelShell } from './components/PanelShell'
 import {
@@ -863,6 +864,12 @@ export default function App() {
     })
   }, [result, pieces])
 
+  // Inventory edited since the run: the frozen result no longer matches it.
+  const resultStale = useMemo(
+    () => (result && !status.running ? isResultStale(result, pieces) : false),
+    [result, pieces, status.running],
+  )
+
   // Boards the time limit was too low to find *any* layout for (cut off before
   // placing a single piece). Only meaningful on the final result — while the
   // optimizer is still running, not-yet-solved boards are legitimately empty.
@@ -1158,6 +1165,7 @@ export default function App() {
               pieces={pieces}
               currentStats={currentStats}
               onChange={setPieces}
+              resultStale={resultStale}
               // "Unused" only means something once a run has finished; mid-run
               // it's just the not-yet-placed pieces, so don't surface it.
               unusedIds={
@@ -1216,6 +1224,15 @@ export default function App() {
                     Preliminary result (still working)…
                   </div>
                 )}
+                {resultStale && (
+                  <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                    <span className="font-semibold">
+                      Inventory changed since this result.
+                    </span>{' '}
+                    The board and stats below reflect the old inventory and may
+                    not match your pieces. Run again to update them.
+                  </div>
+                )}
                 {timedOutBoards.length > 0 && (
                   <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
                     <span className="font-semibold">
@@ -1245,6 +1262,14 @@ export default function App() {
                     for a more thorough search.
                   </div>
                 )}
+                {/* Stale: we can't tell which pieces were removed or from which
+                    board, so grey out everything derived from the old run. */}
+                <div
+                  className={`flex flex-col gap-4 transition-opacity ${
+                    resultStale ? 'opacity-40 grayscale' : ''
+                  }`}
+                  aria-label={resultStale ? 'Out-of-date result' : undefined}
+                >
                 <header className="flex items-center justify-between gap-4">
                   <div>
                     <h2 className="sr-only">Result</h2>
@@ -1328,6 +1353,7 @@ export default function App() {
                 {!status.running && (
                   <UnusedPiecesSection pieces={unusedPieces} />
                 )}
+                </div>
 
                 <div className="text-[11px] text-gray-500 text-right">
                   {result.elapsedMs.toFixed(0)}ms

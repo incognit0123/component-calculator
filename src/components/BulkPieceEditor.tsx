@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Minus, Plus } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
 import { BUFF_TABLE } from '../data/buffTable'
@@ -11,10 +11,11 @@ import { StatIcon } from './icons/StatIcon'
 import { TierBadge } from './icons/TierBadge'
 
 interface Props {
-  open: boolean
   pieces: Piece[]
   onClose: () => void
   onApply: (pieces: Piece[]) => void
+  /** Pieces the last run left unplaced; dropped first when counts decrease. */
+  unusedIds?: Set<string>
 }
 
 const MAX_COUNT = 99
@@ -24,7 +25,7 @@ type Counts = Record<string, number>
 const cellKey = (stat: StatKey, quality: QualityTier, shape: ShapeKey) =>
   `${stat}|${quality}|${shape}`
 
-function countPieces(pieces: Piece[]): Counts {
+export function countPieces(pieces: Piece[]): Counts {
   const counts: Counts = {}
   for (const p of pieces) {
     const k = cellKey(p.stat, p.quality, p.shape)
@@ -36,18 +37,29 @@ function countPieces(pieces: Piece[]): Counts {
 /**
  * Reconcile the inventory with the edited counts. Cells whose count is
  * unchanged keep their pieces (ids + order) untouched; increases append new
- * pieces; decreases drop the most recently added pieces of that kind.
+ * pieces; decreases drop pieces the last run left unused first (they are the
+ * ones the user is removing), then the most recently added of that kind.
+ * Placed pieces are kept preferentially so the frozen result stays valid.
  */
-function applyCounts(pieces: Piece[], draft: Counts): Piece[] {
+export function applyCounts(
+  pieces: Piece[],
+  draft: Counts,
+  unusedIds?: Set<string>,
+): Piece[] {
   const remaining: Counts = { ...draft }
-  const kept: Piece[] = []
-  for (const p of pieces) {
-    const k = cellKey(p.stat, p.quality, p.shape)
-    if ((remaining[k] ?? 0) > 0) {
-      remaining[k] -= 1
-      kept.push(p)
+  const keep = new Set<string>()
+  // Two passes: placed pieces claim their slots first, unused fill the rest.
+  for (const wantUnused of [false, true]) {
+    for (const p of pieces) {
+      if ((unusedIds?.has(p.id) ?? false) !== wantUnused) continue
+      const k = cellKey(p.stat, p.quality, p.shape)
+      if ((remaining[k] ?? 0) > 0) {
+        remaining[k] -= 1
+        keep.add(p.id)
+      }
     }
   }
+  const kept = pieces.filter((p) => keep.has(p.id))
   const added: Piece[] = []
   for (const stat of STATS) {
     for (const q of QUALITIES) {
@@ -62,16 +74,17 @@ function applyCounts(pieces: Piece[], draft: Counts): Piece[] {
   return [...kept, ...added]
 }
 
-export function BulkPieceEditor({ open, pieces, onClose, onApply }: Props) {
-  const [draft, setDraft] = useState<Counts>({})
+export function BulkPieceEditor({
+  pieces,
+  onClose,
+  onApply,
+  unusedIds,
+}: Props) {
+  // The parent mounts this only while open, so the draft is always seeded
+  // fresh from the live inventory (never carried over from a previous session)
+  // and Apply treats it as the complete desired inventory, not a diff.
+  const [draft, setDraft] = useState<Counts>(() => countPieces(pieces))
   const [stat, setStat] = useState<StatKey>('critDamage')
-
-  useEffect(() => {
-    if (!open) return
-    setDraft(countPieces(pieces))
-    // Only re-seed when the modal opens, not on every inventory change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
 
   const statTotals = useMemo(() => {
     const totals: Record<string, number> = {}
@@ -82,8 +95,6 @@ export function BulkPieceEditor({ open, pieces, onClose, onApply }: Props) {
     return totals
   }, [draft])
   const grandTotal = Object.values(statTotals).reduce((a, b) => a + b, 0)
-
-  if (!open) return null
 
   const setCount = (k: string, n: number) =>
     setDraft((d) => ({ ...d, [k]: Math.max(0, Math.min(MAX_COUNT, n)) }))
@@ -244,7 +255,7 @@ export function BulkPieceEditor({ open, pieces, onClose, onApply }: Props) {
             <button
               type="button"
               onClick={() => {
-                onApply(applyCounts(pieces, draft))
+                onApply(applyCounts(pieces, draft, unusedIds))
                 onClose()
               }}
               className="px-3 py-1.5 rounded-md bg-accent text-white font-semibold hover:bg-accent/90"

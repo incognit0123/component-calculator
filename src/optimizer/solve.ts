@@ -206,9 +206,12 @@ interface SolveContext {
 
 /**
  * K < G regime: try to tile the entire inventory. Selection is trivial.
- * Falls back to all-but-one-piece tilings only if the full-inventory shape
- * mix can't be packed — adding any piece strictly improves score, so the
- * largest tileable subset always wins.
+ *
+ * Adding a piece strictly helps *for a fixed tiling*, but the full inventory's
+ * shape mix may not reach the line target (or not tile at all) while a mix
+ * missing one piece does — and a line bonus can outweigh the dropped piece. So
+ * unless the full inventory already hits the target, also try every
+ * drop-one-piece mix and keep the best scoring layout.
  */
 async function solveSmallInventory(ctx: SolveContext): Promise<BoardSolveResult> {
   const fullDist = inventoryShapeCounts(ctx.inventory)
@@ -220,41 +223,58 @@ async function solveSmallInventory(ctx: SolveContext): Promise<BoardSolveResult>
   const tiling = tileDistribution(fullDist, ctx.cols, target, {
     deadline: ctx.deadline,
   })
-  if (tiling) {
-    return buildResult(
-      ctx,
-      ctx.inventory,
-      tiling.slots,
-      tiling.lines,
-    )
+  if (tiling && tiling.lines >= target) {
+    return buildResult(ctx, ctx.inventory, tiling.slots, tiling.lines)
   }
 
-  let best: BoardSolveResult | null = null
-  let bestScore = formula(ctx.currentStats)
-  for (let i = 0; i < ctx.inventory.length; i++) {
+  const score = (picks: Piece[], lines: number) =>
+    scoreLayout(
+      ctx.currentStats,
+      picks,
+      lines,
+      ctx.tiers,
+      ctx.mountLevel,
+      ctx.pieceBuffMultiplier,
+    )
+
+  let best: { picks: Piece[]; tiling: TilingResult } | null = tiling
+    ? { picks: ctx.inventory, tiling }
+    : null
+  let bestScore = tiling
+    ? score(ctx.inventory, tiling.lines)
+    : formula(ctx.currentStats)
+
+  // Tiling depends only on the shape mix, so tile once per shape and then pick
+  // which piece of that shape to drop by score.
+  for (const shape of SHAPE_KEYS) {
+    if (fullDist[shape] === 0) continue
     if (await maybeYield(ctx)) break
-    const dropped = ctx.inventory.filter((_, j) => j !== i)
-    const droppedDist = inventoryShapeCounts(dropped)
+    const droppedDist = { ...fullDist, [shape]: fullDist[shape] - 1 }
     const droppedTiling = tileDistribution(
       droppedDist,
       ctx.cols,
-      effectiveLineTarget(totalShapeCells(droppedDist), ctx.maxBonusLines, ctx.cols),
+      effectiveLineTarget(
+        totalShapeCells(droppedDist),
+        ctx.maxBonusLines,
+        ctx.cols,
+      ),
       { deadline: ctx.deadline },
     )
     if (!droppedTiling) continue
-    const result = buildResult(
-      ctx,
-      dropped,
-      droppedTiling.slots,
-      droppedTiling.lines,
-    )
-    if (result.afterScore > bestScore) {
-      bestScore = result.afterScore
-      best = result
+    for (let i = 0; i < ctx.inventory.length; i++) {
+      if (ctx.inventory[i].shape !== shape) continue
+      const picks = ctx.inventory.filter((_, j) => j !== i)
+      const s = score(picks, droppedTiling.lines)
+      if (s > bestScore) {
+        bestScore = s
+        best = { picks, tiling: droppedTiling }
+      }
     }
   }
 
-  return best ?? emptyResult(ctx)
+  return best
+    ? buildResult(ctx, best.picks, best.tiling.slots, best.tiling.lines)
+    : emptyResult(ctx)
 }
 
 async function solveFullInventory(
