@@ -187,4 +187,39 @@ describe('solve', () => {
       8,
     )
   }, 30000)
+
+  it('drops a piece when that lets the rest clear more lines (K < G)', async () => {
+    // 10 pieces: the full mix tiles but misses lines that the same mix minus
+    // one piece reaches, and the line bonus outweighs the dropped piece.
+    const inventory: Piece[] = (
+      [
+        ['J', 'better', 'toBosses'],
+        ['J', 'epic', 'laceration'],
+        ['J', 'better', 'critDamage'],
+        ['O', 'better', 'shieldDamage'],
+        ['J', 'good', 'toPoisoned'],
+        ['J', 'excellentPlus', 'laceration'],
+        ['T', 'epicPlus', 'toBosses'],
+        ['J', 'better', 'critDamage'],
+        ['J', 'better', 'shieldDamage'],
+        ['J', 'better', 'skillDamage'],
+      ] as [ShapeKey, QualityTier, StatKey][]
+    ).map(([shape, quality, stat]) => mk(shape, quality, stat))
+    const stats = {
+      critDamage: 13,
+      skillDamage: 14,
+      shieldDamage: 40,
+      toWeakened: 86,
+      toPoisoned: 55,
+      toChilled: 73,
+      laceration: 76,
+      toBosses: 61,
+    }
+    const result = await solve(inventory, stats, {
+      mountKey: 'electricScooter',
+      mountLevel: 8,
+    })
+    expect(result.placements.length).toBe(9)
+    expect(result.afterScore).toBeGreaterThan(41)
+  }, 30000)
 })
