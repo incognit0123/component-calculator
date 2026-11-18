@@ -63,6 +63,7 @@ describe('inventory editor synchronization', () => {
     expect(dialog.queryByRole('button', { name: /Vulnerability/ })).not.toBeInTheDocument()
   })
 
+  // This full editor round-trip can exceed the default 5s on shared CI runners.
   it('shares additions, bulk counts across stat tabs, edits, and summary counts', () => {
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: '+ Add piece' }))
@@ -109,7 +110,7 @@ describe('inventory editor synchronization', () => {
     expect(countPieces(savedPieces())).toEqual({
       'skillDamage|epic|I': 2, 'toChilled|epicPlus|T': 2, 'toPoisoned|legend|J': 1,
     })
-  })
+  }, 15_000)
 
   it('discards cancelled bulk drafts and starts fresh when reopened', () => {
     startWithPiece()
