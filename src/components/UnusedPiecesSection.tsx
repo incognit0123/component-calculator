@@ -3,13 +3,18 @@ import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { Piece } from '../data/types'
 import { PieceCard } from './PieceCard'
 import { PieceCountSummary } from './PieceCountSummary'
+import { UnusedPieceMerges, type MergeInventory } from './UnusedPieceMerges'
 
 /**
  * Pieces the optimizer didn't place. Collapsed by default to a count plus a
  * per-stat summary, since the full list is rarely useful and takes a lot of
  * space; expands to the individual (dimmed) cards.
  */
-export function UnusedPiecesSection({ pieces }: { pieces: Piece[] }) {
+export function UnusedPiecesSection({ pieces, merge, needsAllMounts }: {
+  pieces: Piece[]
+  merge?: MergeInventory
+  needsAllMounts: boolean
+}) {
   const [collapsed, setCollapsed] = useState(true)
   if (pieces.length === 0) return null
   const label = `${pieces.length} unused piece${pieces.length === 1 ? '' : 's'}`
@@ -62,6 +67,11 @@ export function UnusedPiecesSection({ pieces }: { pieces: Piece[] }) {
           )}
         </button>
       </div>
+
+      {needsAllMounts && (
+        <p className="mt-3 text-xs text-gray-300">Run the optimizer across all unlocked mounts to see merge options.</p>
+      )}
+      {merge && <UnusedPieceMerges pieces={pieces} {...merge} />}
     </div>
   )
 }

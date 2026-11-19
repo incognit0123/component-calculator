@@ -233,7 +233,7 @@ export function PieceInventory({
 
       {resultStale && !collapsed && (
         <p className="text-xs text-amber-300 mb-2">
-          Inventory changed since the last run — run again to refresh the result.
+          Run the optimizer again to see which pieces are unused in your current setup.
         </p>
       )}
 

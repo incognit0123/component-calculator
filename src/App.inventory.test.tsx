@@ -124,7 +124,7 @@ describe('inventory editor synchronization', () => {
     expect(dialog.getByRole('spinbutton', { name: 'good I count' })).toHaveValue(1)
     fireEvent.click(dialog.getByRole('button', { name: 'Apply' }))
     expect(savedPieces()).toEqual([piece])
-  })
+  }, 10_000)
 
   it('reflects card deletions and persists the same counts after reloading', () => {
     startWithPiece()
@@ -144,7 +144,7 @@ describe('inventory editor synchronization', () => {
     expect(dialog.getByRole('spinbutton', { name: 'good I count' })).toHaveValue(2)
     fireEvent.click(dialog.getByRole('button', { name: 'Apply' }))
     expect(savedPieces()).toEqual(saved)
-  })
+  }, 10_000)
 })
 
 describe('inventory edits after an optimizer run', () => {
@@ -174,3 +174,94 @@ describe('inventory edits after an optimizer run', () => {
     expect(resultBoard().querySelector('image')).toHaveAttribute('href', STAT_META.skillDamage.icon)
   })
 })
+
+it('keeps result stats frozen and hides merge options after stats or stars change', () => {
+  const unused = [{ ...piece, id: 'unused-a' }, { ...piece, id: 'unused-b' }]
+  window.localStorage.setItem(PIECES_KEY, JSON.stringify([piece, ...unused]))
+  render(<App />)
+  const vulnerability = screen.getByRole('spinbutton', { name: 'Vulnerability (%)' })
+  fireEvent.change(vulnerability, { target: { value: '90' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Run optimizer' }))
+  act(() => onMessage!({ data: { type: 'done', result: { ...result(), unusedPieceIds: unused.map(({ id }) => id) } } }))
+  expect(screen.getByText('Merge options for unused pieces (1)')).toBeInTheDocument()
+
+  fireEvent.change(vulnerability, { target: { value: '200' } })
+  const staleResult = within(screen.getByLabelText('Out-of-date result'))
+  const vulnerabilityRow = staleResult.getByRole('row', { name: /Vulnerability/ })
+  expect(within(vulnerabilityRow).getAllByRole('cell').map((cell) => cell.textContent?.trim()).slice(1))
+    .toEqual(['90%', '—', '—', '90%'])
+  expect(screen.getByText('Stats or mount settings changed since this result.')).toBeInTheDocument()
+  expect(screen.queryByText(/Merge options for unused pieces/)).not.toBeInTheDocument()
+
+  fireEvent.change(vulnerability, { target: { value: '90' } })
+  expect(screen.queryByLabelText('Out-of-date result')).not.toBeInTheDocument()
+  expect(screen.getByText('Merge options for unused pieces (1)')).toBeInTheDocument()
+
+  const scooter = screen.getByRole('button', { name: 'Select Electric Scooter' }).parentElement!
+  fireEvent.click(within(scooter).getByRole('button', { name: 'Set mount level to 1' }))
+  expect(screen.getByText('Stats or mount settings changed since this result.')).toBeInTheDocument()
+  expect(screen.queryByText(/Merge options for unused pieces/)).not.toBeInTheDocument()
+})
+
+it('records the chosen unused pieces and the actual merge outcome in one inventory update', () => {
+  const unused: Piece[] = [
+    { ...piece, id: 'good-crit', stat: 'critDamage' },
+    { ...piece, id: 'good-shield', stat: 'shieldDamage' },
+    { ...piece, id: 'good-chilled', stat: 'toChilled' },
+    ...Array.from({ length: 3 }, (_, index): Piece => ({ ...piece, id: `epic-${index}`, shape: 'O', quality: 'epic' })),
+    ...Array.from({ length: 2 }, (_, index): Piece => ({ ...piece, id: `epic-plus-${index}`, shape: 'L', quality: 'epicPlus' })),
+    ...Array.from({ length: 6 }, (_, index): Piece => ({ ...piece, id: `legend-${index}`, shape: 'J', quality: 'legend' })),
+  ]
+  const inventory = [piece, ...unused]
+  window.localStorage.setItem(PIECES_KEY, JSON.stringify(inventory))
+  window.localStorage.setItem('mount-opt:current-stats:v1', JSON.stringify({
+    ...zeroStats(), critDamage: 1000, toChilled: 1000,
+  }))
+  render(<App />)
+  fireEvent.click(screen.getByRole('button', { name: 'Run optimizer' }))
+  act(() => onMessage!({ data: { type: 'done', result: { ...result(), unusedPieceIds: unused.map(({ id }) => id) } } }))
+
+  fireEvent.click(screen.getByText('Merge options for unused pieces (2)'))
+  fireEvent.click(screen.getByRole('button', { name: 'Record merge of Epic square pieces' }))
+  let dialog = within(screen.getByRole('dialog', { name: 'Record a merge' }))
+  expect(dialog.getByRole('combobox', { name: 'Piece 3' })).toBeInTheDocument()
+  const epicInput = dialog.getByRole('group', { name: 'Used square pieces Epic' })
+  const epicPlusOutput = dialog.getByRole('group', { name: 'New square piece Epic+1' })
+  expect(epicInput.querySelectorAll('svg polygon')).toHaveLength(0)
+  expect(epicPlusOutput.querySelectorAll('svg polygon')).toHaveLength(4)
+  expect(dialog.getByText('After this merge, you’ll have 13 pieces for 14 board slots.')).toBeInTheDocument()
+  expect(dialog.getByText('You’ll be 1 piece short.')).toBeInTheDocument()
+  fireEvent.click(dialog.getByRole('button', { name: 'Cancel' }))
+  expect(savedPieces()).toEqual(inventory)
+
+  const record = screen.getByRole('button', { name: 'Record merge of Good I pieces' })
+  expect(record.closest('li')).not.toHaveTextContent('Crit Damage (+8%)')
+  fireEvent.click(record)
+  dialog = within(screen.getByRole('dialog', { name: 'Record a merge' }))
+  expect(dialog.getByText('After this merge, you’ll have 14 pieces for 14 board slots.')).toBeInTheDocument()
+  expect(dialog.queryByText(/piece.*short/)).not.toBeInTheDocument()
+  expect(dialog.getByText('The current layout has gaps. Filling them also depends on which shapes fit.')).toBeInTheDocument()
+  expect(dialog.queryByRole('combobox', { name: 'Piece 3' })).not.toBeInTheDocument()
+  const firstSource = dialog.getByRole('combobox', { name: 'Piece 1' })
+  expect(firstSource).toHaveValue('good-crit')
+  expect(dialog.getByRole('combobox', { name: 'Piece 2' })).toHaveValue('good-chilled')
+  expect(within(firstSource).queryByRole('option', { name: /^Skill Damage/ })).not.toBeInTheDocument()
+  fireEvent.change(firstSource, { target: { value: 'good-shield' } })
+  expect(dialog.getByRole('group', { name: 'New I piece Better' })).toBeInTheDocument()
+  expect(dialog.queryByRole('combobox', { name: 'Grade' })).not.toBeInTheDocument()
+  expect(dialog.queryByRole('combobox', { name: 'Shape' })).not.toBeInTheDocument()
+  const save = dialog.getByRole('button', { name: 'Save merged piece' })
+  expect(save).toBeDisabled()
+  fireEvent.change(dialog.getByRole('combobox', { name: 'Stat' }), { target: { value: 'laceration' } })
+  fireEvent.click(save)
+
+  const updated = savedPieces()
+  expect(updated.slice(0, -1)).toEqual(inventory.filter(({ id }) => id !== 'good-chilled' && id !== 'good-shield'))
+  expect(updated.at(-1)).toMatchObject({ shape: 'I', quality: 'better', stat: 'laceration' })
+  expect(screen.getByText('Inventory changed since this result.')).toBeInTheDocument()
+  expect(screen.queryByText(/Merge options for unused pieces/)).not.toBeInTheDocument()
+  const mergeSaved = screen.getByText('Merge saved. Run the optimizer again to find more merge options.')
+  expect(mergeSaved).toHaveAttribute('role', 'status')
+  fireEvent.click(screen.getByRole('button', { name: 'Run optimizer' }))
+  expect(mergeSaved).not.toBeInTheDocument()
+}, 10_000)

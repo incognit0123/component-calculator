@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
+import { v4 as uuid } from 'uuid'
 import { CurrentStatsPanel } from './components/CurrentStatsPanel'
 import { PieceInventory } from './components/PieceInventory'
 import { MountPanel } from './components/MountPanel'
 import { OptimizerPanel } from './components/OptimizerPanel'
 import type { FullTimeLimit, OptimizeScope } from './components/OptimizerPanel'
 import { BoardView } from './components/BoardView'
+import { BoardCoverage } from './components/BoardCoverage'
 import { MountBoardPreview } from './components/MountBoardPreview'
 import { StatsSummary, type StatsTab } from './components/StatsSummary'
 import { isResultStale } from './utils/resultStale'
@@ -21,11 +23,13 @@ import {
   MOUNTS,
   type MountKey,
 } from './data/mounts'
-import { STAT_KEYS, zeroStats } from './data/stats'
+import { SCORE_STAT_KEYS, STAT_KEYS, zeroStats } from './data/stats'
+import { MIN_PIECE_CELLS } from './data/shapes'
 import type { Piece, StatTotals } from './data/types'
 import { usePersistedState } from './hooks/usePersistedState'
 import { useOptimizer } from './hooks/useOptimizer'
-import type { BoardResult, MountConfig } from './optimizer/types'
+import { boardBits } from './optimizer/board'
+import type { BoardResult, OptimizerInput } from './optimizer/types'
 
 import {
   STATS_KEY, PIECES_KEY, MOUNT_LEVELS_KEY, SELECTED_MOUNT_KEY,
@@ -97,7 +101,8 @@ export default function App() {
   )
 
   const { status, run, cancel } = useOptimizer()
-  const [runPieces, setRunPieces] = useState<Piece[] | null>(null)
+  const [runInput, setRunInput] = useState<OptimizerInput | null>(null)
+  const [lastMergedPieceId, setLastMergedPieceId] = useState<string | null>(null)
   const [isProfilesOpen, setIsProfilesOpen] = useState(false)
   const [isSaveProfileOpen, setIsSaveProfileOpen] = useState(false)
   const [profileName, setProfileName] = useState('')
@@ -118,7 +123,8 @@ export default function App() {
   const [activeStatsTab, setActiveStatsTab] = useState<string>('all')
 
   const result = status.result ?? status.progress?.partial ?? null
-  const resultPieces = runPieces ?? pieces
+  const resultPieces = runInput?.pieces ?? pieces
+  const resultStats = runInput?.currentStats ?? currentStats
   const pendingEquippedMount = result && MOUNTS[result.equippedMountKey].lineBonusesPending
     ? MOUNTS[result.equippedMountKey]
     : null
@@ -143,9 +149,17 @@ export default function App() {
     })
   }, [result])
 
-  const selectedMountLevel = mountLevels[selectedMountKey]
   const unlockedKeys = MOUNT_KEYS.filter((k) => unlockedMounts[k])
   const unlockedCount = unlockedKeys.length
+  const runMountKeys = [selectedMountKey]
+  if (optimizeScope === 'allUnlocked') {
+    runMountKeys.push(...unlockedKeys.filter((key) => key !== selectedMountKey))
+  }
+  const mountConfigs = runMountKeys.map((key) => ({
+    mountKey: key,
+    mountLevel: mountLevels[key],
+    isEquipped: key === selectedMountKey,
+  }))
 
   const handleMountLevelChange = (key: MountKey, level: MountLevel) => {
     setMountLevels((prev) => ({ ...prev, [key]: level }))
@@ -166,38 +180,15 @@ export default function App() {
   }
 
   const handleRun = () => {
-    const timeBudgetMs = fullTimeLimit.enabled
-      ? fullTimeLimit.seconds * 1000
-      : undefined
-
-    const includeNonEquipped =
-      optimizeScope === 'allUnlocked' && unlockedCount > 1
-    const mountConfigs: MountConfig[] = [
-      {
-        mountKey: selectedMountKey,
-        mountLevel: selectedMountLevel,
-        isEquipped: true,
-      },
-    ]
-    if (includeNonEquipped) {
-      for (const key of unlockedKeys) {
-        if (key === selectedMountKey) continue
-        mountConfigs.push({
-          mountKey: key,
-          mountLevel: mountLevels[key],
-          isEquipped: false,
-        })
-      }
-    }
-
-    const inventorySnapshot = pieces.map((piece) => ({ ...piece }))
-    setRunPieces(inventorySnapshot)
-    run({
-      currentStats,
-      pieces: inventorySnapshot,
+    const input: OptimizerInput = {
+      currentStats: { ...currentStats },
+      pieces: pieces.map((piece) => ({ ...piece })),
       mountConfigs,
-      timeBudgetMs,
-    })
+      timeBudgetMs: fullTimeLimit.enabled ? fullTimeLimit.seconds * 1000 : undefined,
+    }
+    setRunInput(input)
+    setLastMergedPieceId(null)
+    run(input)
   }
 
   const improvementPct = (before: number, after: number) => {
@@ -225,11 +216,44 @@ export default function App() {
     })
   }, [result, resultPieces])
 
-  // Inventory edited since the run: the frozen result no longer matches it.
-  const resultStale = useMemo(
-    () => (result && !status.running ? isResultStale(result, pieces, runPieces ?? undefined) : false),
-    [result, pieces, runPieces, status.running],
+  const inventoryChanged = useMemo(
+    () => !!result && !status.running && isResultStale(result, pieces, runInput?.pieces),
+    [result, pieces, runInput, status.running],
   )
+  const setupChanged = !!result && !status.running && !!runInput && (
+    SCORE_STAT_KEYS.some((key) => (resultStats[key] ?? 0) !== (currentStats[key] ?? 0)) ||
+    mountConfigs.length !== runInput.mountConfigs.length ||
+    mountConfigs.some((mount, index) => {
+      const previous = runInput.mountConfigs[index]
+      return mount.mountKey !== previous.mountKey || mount.mountLevel !== previous.mountLevel
+    })
+  )
+  const resultStale = inventoryChanged || setupChanged
+
+  const boardCapacity = result?.boards.reduce(
+    (total, board) => total + boardBits(MOUNTS[board.mountKey].cols) / MIN_PIECE_CELLS,
+    0,
+  ) ?? 0
+  const placedCount = result?.boards.reduce((total, board) => total + board.placements.length, 0) ?? 0
+  const finishedResult = status.result?.stopReason === 'cancelled' ? null : status.result
+  const includesAllUnlocked = finishedResult?.boards.length === unlockedKeys.length &&
+    unlockedKeys.every((key) => finishedResult.boards.some((board) => board.mountKey === key))
+  const mergeResult = finishedResult && !finishedResult.truncated && !resultStale && includesAllUnlocked
+    ? finishedResult
+    : null
+  const mergeSaved = lastMergedPieceId !== null && pieces.some((piece) => piece.id === lastMergedPieceId)
+
+  function recordMerge(sourceIds: string[], draft: Omit<Piece, 'id'>) {
+    if (!mergeResult || sourceIds.some((id) => !mergeResult.unusedPieceIds.includes(id))) return
+    const consumed = new Set(sourceIds)
+    if (consumed.size !== sourceIds.length) return
+    const newPiece = { ...draft, id: uuid() }
+    setPieces((inventory) => {
+      if (isResultStale(mergeResult, inventory, runInput?.pieces)) return inventory
+      return [...inventory.filter((piece) => !consumed.has(piece.id)), newPiece]
+    })
+    setLastMergedPieceId(newPiece.id)
+  }
 
   // Boards the time limit was too low to find *any* layout for (cut off before
   // placing a single piece). Only meaningful on the final result — while the
@@ -560,11 +584,7 @@ export default function App() {
               multipleMountsUnlocked={unlockedCount > 1}
               scope={optimizeScope}
               onScopeChange={setOptimizeScope}
-              boardCount={
-                optimizeScope === 'allUnlocked' && unlockedCount > 1
-                  ? unlockedCount
-                  : 1
-              }
+              boardCount={mountConfigs.length}
               exploredCount={status.progress?.explored}
               fractionComplete={status.progress?.fractionComplete}
               boardIndex={status.progress?.boardIndex}
@@ -613,10 +633,9 @@ export default function App() {
                 {resultStale && (
                   <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
                     <span className="font-semibold">
-                      Inventory changed since this result.
+                      {setupChanged ? 'Stats or mount settings changed since this result.' : 'Inventory changed since this result.'}
                     </span>{' '}
-                    The board and stats below reflect the old inventory and may
-                    not match your pieces. Run again to update them.
+                    The board and stats below are from the previous run. Run again to update them.
                   </div>
                 )}
                 {timedOutBoards.length > 0 && (
@@ -677,6 +696,10 @@ export default function App() {
                   </div>
                 </header>
 
+                {finishedResult && (
+                  <BoardCoverage placedCount={placedCount} capacity={boardCapacity} inventoryCount={resultPieces.length} />
+                )}
+
                 <div className="flex flex-col items-center gap-1">
                   <div className="text-sm text-gray-200">
                     {displayedMount.name}
@@ -723,7 +746,7 @@ export default function App() {
 
                 {statsViewProps && (
                   <StatsSummary
-                    currentStats={currentStats}
+                    currentStats={resultStats}
                     buffsFromPieces={statsViewProps.buffsFromPieces}
                     secondaryValues={statsViewProps.secondaryValues}
                     secondaryKind={statsViewProps.secondaryKind}
@@ -737,9 +760,25 @@ export default function App() {
                 )}
 
                 {!status.running && (
-                  <UnusedPiecesSection pieces={unusedPieces} />
+                  <UnusedPiecesSection
+                    pieces={unusedPieces}
+                    needsAllMounts={!!finishedResult && !resultStale && !includesAllUnlocked}
+                    merge={mergeResult ? {
+                      boardCapacity,
+                      hasBoardGaps: placedCount < boardCapacity,
+                      inventoryCount: pieces.length,
+                      currentStats: resultStats,
+                      onRecord: recordMerge,
+                    } : undefined}
+                  />
                 )}
                 </div>
+
+                {mergeSaved && (
+                  <p className="rounded-md border border-bg-line bg-bg-elev/40 px-3 py-2 text-xs text-gray-200" role="status">
+                    Merge saved. Run the optimizer again to find more merge options.
+                  </p>
+                )}
 
                 <div className="text-[11px] text-gray-500 text-right">
                   {result.elapsedMs.toFixed(0)}ms

@@ -75,6 +75,9 @@ describe('configuration compatibility', () => {
 
     const resultPanel = screen.getByRole('heading', { name: 'Result' }).closest('.panel-frame')!
     const view = within(resultPanel as HTMLElement)
+    const coverage = view.getByRole('complementary', { name: 'Board coverage' })
+    expect(coverage).toHaveTextContent('Used every piece in your inventory (1).')
+    expect(coverage).toHaveTextContent('Total board capacity is 104 pieces. Aim for 103 more pieces, even if they are lower grade.')
     for (const key of MOUNT_KEYS) {
       expect(view.getByRole('button', { name: new RegExp(`${MOUNTS[key].name}.*(?:pieces?|Empty board)$`) })).toBeInTheDocument()
     }
@@ -85,6 +88,43 @@ describe('configuration compatibility', () => {
     expect(view.getByText('0 lines filled · 0 pieces placed')).toBeInTheDocument()
     expect(resultPanel.querySelector('svg')!.querySelectorAll('g')).toHaveLength(0)
     expect(screen.queryByText(/Time limit too low/)).not.toBeInTheDocument()
+  })
+
+  it.each(['O', 'I'] as const)('uses the equipped-only scope for coverage with a full inventory of %s pieces', async (shape) => {
+    let onMessage: ((event: { data: WorkerMessage }) => void) | undefined
+    const postMessage = vi.fn()
+    vi.stubGlobal('Worker', class {
+      addEventListener(_type: string, listener: (event: { data: WorkerMessage }) => void) { onMessage = listener }
+      postMessage = postMessage
+      terminate = vi.fn()
+    })
+    const config = setup()
+    const pieces: Piece[] = Array.from({ length: 14 }, (_, index) => ({
+      id: `piece-${index}`, shape, quality: 'good', stat: 'skillDamage',
+    }))
+    window.localStorage.setItem('mount-opt:pieces:v1', JSON.stringify(pieces))
+    window.localStorage.setItem('mount-opt:unlocked-mounts:v1', JSON.stringify({
+      ...config.unlockedMounts, ruinWarskitter: true,
+    }))
+    window.localStorage.setItem('mount-opt:optimize-scope:v1', JSON.stringify('equippedOnly'))
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Run optimizer' }))
+    const input = postMessage.mock.calls[0][0]
+    const result = await solveAll(input.pieces, input.currentStats, input.mountConfigs)
+    act(() => onMessage!({ data: { type: 'done', result } }))
+
+    const coverage = screen.queryByRole('complementary', { name: 'Board coverage' })
+    if (shape === 'I') {
+      expect(coverage).not.toBeInTheDocument()
+    } else {
+      expect(coverage).toHaveTextContent('Placed 12 of the 14 pieces in your inventory.')
+      expect(coverage).toHaveTextContent('Total board capacity is 14 pieces. You have enough pieces by count.')
+      expect(screen.getByText('Run the optimizer across all unlocked mounts to see merge options.')).toBeInTheDocument()
+      expect(screen.queryByText(/Merge options for unused pieces/)).not.toBeInTheDocument()
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: 'All unlocked mounts' }))
+    expect(screen.getByText('Stats or mount settings changed since this result.')).toBeInTheDocument()
   })
 
   it('loads v9 exports with zero Vulnerability while preserving the original eight stats', () => {
@@ -211,6 +251,7 @@ describe('configuration compatibility', () => {
     }
     // Picker edits do not change which mount produced the frozen result.
     fireEvent.click(screen.getByRole('button', { name: 'Select Electric Scooter' }))
+    expect(screen.getByText('Stats or mount settings changed since this result.')).toBeInTheDocument()
     expect(screen.getByText('Assumes six stacks for the 5-line bonus (+60% Shield Damage).')).toBeInTheDocument()
   })
 
