@@ -91,7 +91,7 @@ export function StatsSummary({
               const before = currentStats[s.key] ?? 0
               const piece = buffsFromPieces[s.key] ?? 0
               const secondary = secondaryValues[s.key] ?? 0
-              const after = before + piece + secondary
+              const after = before + (secondaryKind === 'syncRate' ? secondary : piece + secondary)
               return (
                 <tr key={s.key} className="border-t border-bg-line">
                   <td className="px-0.5 sm:px-2 py-1.5">

@@ -88,10 +88,11 @@ const DOOMSTEED_TIERS: LineBonusTier[] = [
 ]
 
 // Sync-rate percentages indexed by MountLevel 0..8 (0 stars, then 1..4 yellow,
-// then 1..4 red). Source: in-game mount data.
-const ELECTRIC_SCOOTER_SYNC_RATES: number[] = [20, 22, 24, 28, 32, 38, 44, 52, 60]
-const TECH_HOVERBOARD_SYNC_RATES: number[] = [30, 33, 36, 40, 45, 50, 55, 60, 75]
-const DOOMSTEED_SYNC_RATES: number[] = [40, 44, 48, 55, 62, 71, 80, 90, 100]
+// then 1..4 red). Verified against Expo's calculator on 2026-11-22.
+const ELECTRIC_SCOOTER_SYNC_RATES: number[] = [30, 32, 35, 40, 45, 52, 60, 70, 80]
+const TECH_HOVERBOARD_SYNC_RATES: number[] = [45, 48, 52, 57, 62, 69, 75, 82, 100]
+// Expo's calculator uses this table for all three Legendary mounts (2026-11-21).
+const LEGENDARY_SYNC_RATES: number[] = [60, 65, 75, 92, 112, 132, 152, 175, 200]
 
 const NETHERFLAME_STALKER_TIERS: LineBonusTier[] = [
   { minLines: 1, unlockedAtLevel: 0, bonus: { toChilled: 30 } },
@@ -158,7 +159,7 @@ export const MOUNTS: Record<MountKey, MountSpec> = {
     bgColor: '#FE4C6A',
     cols: 12,
     lineBonusTiers: DOOMSTEED_TIERS,
-    syncRates: DOOMSTEED_SYNC_RATES,
+    syncRates: LEGENDARY_SYNC_RATES,
   },
   netherflameStalker: {
     key: 'netherflameStalker',
@@ -167,7 +168,7 @@ export const MOUNTS: Record<MountKey, MountSpec> = {
     bgColor: '#FE4C6A',
     cols: 12,
     lineBonusTiers: NETHERFLAME_STALKER_TIERS,
-    syncRates: DOOMSTEED_SYNC_RATES,
+    syncRates: LEGENDARY_SYNC_RATES,
   },
   ruinWarskitter: {
     key: 'ruinWarskitter',
@@ -194,8 +195,7 @@ export const MOUNTS: Record<MountKey, MountSpec> = {
         text: 'The 8-line bonus adds another +100% Vulnerability at five Enhancement stacks (230% total from this mount).',
       },
     ],
-    // Matches Expo's shared legendary-mount table, including 40% at zero stars.
-    syncRates: DOOMSTEED_SYNC_RATES,
+    syncRates: LEGENDARY_SYNC_RATES,
   },
 }
 

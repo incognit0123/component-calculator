@@ -22,8 +22,11 @@ describe('Ruinous Warskitter mount controls', () => {
     rerender(<MountPanel {...props} unlocked={{ ...unlocked, ruinWarskitter: true }} />)
     const select = screen.getByRole('button', { name: 'Select Ruinous Warskitter' })
     expect(select).toBeEnabled()
-    expect(screen.getByText('40%')).toBeInTheDocument()
+    expect(within(select.parentElement!).getByText('60%')).toBeInTheDocument()
     fireEvent.click(select)
     expect(props.onSelectMount).toHaveBeenCalledWith('ruinWarskitter')
+
+    rerender(<MountPanel {...props} unlocked={{ ...unlocked, ruinWarskitter: true }} levels={{ ...levels, ruinWarskitter: 8 }} />)
+    expect(within(select.parentElement!).getByText('200%')).toBeInTheDocument()
   })
 })

@@ -9,7 +9,7 @@ import type { MountConfig, OptimizerResult } from './types'
 
 const configs: MountConfig[] = [
   { mountKey: 'electricScooter', mountLevel: 0, isEquipped: true },
-  { mountKey: 'doomsteed', mountLevel: 4, isEquipped: false },
+  { mountKey: 'doomsteed', mountLevel: 0, isEquipped: false },
 ]
 
 function pieces(count: number, stat: Piece['stat'], shape: Piece['shape'] = 'I'): Piece[] {
@@ -36,19 +36,20 @@ function expectValidBoards(result: OptimizerResult, inventory: Piece[]): void {
   }
 }
 
-// Independent reference for the all-I fixture: every full scooter allocation
-// fits, as do its 22 leftover pieces on Doomsteed. More equipped pieces always
-// help here, and 14 I pieces attain all possible equipped line bonuses.
+// With 36 I pieces, 12–14 fit on the Scooter and the rest fit on Doomsteed.
+// Each split can fill at least four Scooter rows (all available line bonuses).
 function referenceIAllocation(stats: StatTotals, sync: number): number {
   let best = 0
-  for (let chilled = 0; chilled <= 10; chilled++) {
-    const skill = 14 - chilled
-    const skillTotal = stats.skillDamage + 42 * (skill + (26 - skill) * sync)
-    const debuffTotal = stats.toWeakened + stats.toPoisoned + stats.toChilled + 25 + 42 * (chilled + (10 - chilled) * sync)
-    const score = (1 + (stats.critDamage + 55) / 100) * (1 + skillTotal / 100) *
-      (1 + stats.shieldDamage / 100) * (1 + stats.laceration / 100) *
-      (1 + stats.toBosses / 100) * (1 + debuffTotal / 100)
-    best = Math.max(best, score)
+  for (let equippedCount = 12; equippedCount <= 14; equippedCount++) {
+    for (let chilled = 0; chilled <= 10; chilled++) {
+      const skill = equippedCount - chilled
+      const skillTotal = stats.skillDamage + 42 * (skill + (26 - skill) * sync)
+      const debuffTotal = stats.toWeakened + stats.toPoisoned + stats.toChilled + 25 + 42 * (chilled + (10 - chilled) * sync)
+      const score = (1 + (stats.critDamage + 55) / 100) * (1 + skillTotal / 100) *
+        (1 + stats.shieldDamage / 100) * (1 + stats.laceration / 100) *
+        (1 + stats.toBosses / 100) * (1 + debuffTotal / 100)
+      best = Math.max(best, score)
+    }
   }
   return best
 }
@@ -126,8 +127,7 @@ describe('allocation refinement against independent references', () => {
 
   it('repairs the sequential-allocation counterexample with cross-mount refinement', async () => {
     const result = await solveAll(inventory, zeroStats(), configs)
-    expect(result.afterScore).toBeCloseTo(71.033338, 8)
-    expect(result.afterScore).toBeCloseTo(referenceIAllocation(zeroStats(), 0.62), 8)
+    expect(result.afterScore).toBeCloseTo(referenceIAllocation(zeroStats(), 0.6), 8)
     expect(result.boards[0].placements.filter((p) => p.pieceId.includes('toChilled'))).toHaveLength(10)
     expectValidBoards(result, inventory)
   })
@@ -145,10 +145,12 @@ describe('allocation refinement against independent references', () => {
     expectValidBoards(result, inventory)
   })
 
-  it('matches exhaustive individual-placement enumeration on a tiny mixed-shape inventory', async () => {
+  it.each([0, 8] as const)('matches exhaustive individual placements on a tiny inventory at sync level %i', async (level) => {
     const tiny = [...pieces(1, 'skillDamage', 'I'), ...pieces(1, 'toChilled', 'T')]
-    const result = await solveAll(tiny, zeroStats(), configs)
-    expect(result.afterScore).toBeCloseTo(bruteForce(tiny, configs), 9)
+    const mounts = [configs[0], { ...configs[1], mountLevel: level }]
+    const result = await solveAll(tiny, zeroStats(), mounts)
+    expect(result.afterScore).toBeCloseTo(bruteForce(tiny, mounts), 9)
+    expect(result.boards[1].placements).toHaveLength(level === 8 ? 2 : 0)
     expectValidBoards(result, tiny)
   })
 

@@ -36,14 +36,16 @@ describe('solveAll', () => {
     const inventory = Array.from({ length: pieceCount }, () => mk('I', 'legend', 'skillDamage'))
     const configs: MountConfig[] = [
       { mountKey: 'netherflameStalker', mountLevel: 3, isEquipped: true },
-      { mountKey: 'techHoverboard', mountLevel: 7, isEquipped: false },
       { mountKey: 'doomsteed', mountLevel: 1, isEquipped: false },
+      { mountKey: 'techHoverboard', mountLevel: 7, isEquipped: false },
       { mountKey: 'ruinWarskitter', mountLevel: 0, isEquipped: false },
       { mountKey: 'electricScooter', mountLevel: 5, isEquipped: false },
     ]
     const result = await solveAll(inventory, zeroStats(), configs)
 
-    expect(result.boards.map((board) => board.mountKey)).toEqual(configs.map((config) => config.mountKey))
+    expect(result.boards.map((board) => board.mountKey)).toEqual([
+      'netherflameStalker', 'techHoverboard', 'doomsteed', 'ruinWarskitter', 'electricScooter',
+    ])
     expect(result.boards.map((board) => board.placements.length)).toEqual(
       pieceCount === 1 ? [1, 0, 0, 0, 0] : [24, 1, 0, 0, 0],
     )
@@ -63,7 +65,7 @@ describe('solveAll', () => {
     }
     // Empty synced boards add nothing, including Ruin's equipped-only base effect.
     const expected = zeroStats()
-    expected.skillDamage = pieceCount === 1 ? 42 : 24 * 42 + 200 + 42 * 0.6
+    expected.skillDamage = pieceCount === 1 ? 42 : 24 * 42 + 200 + 42 * 0.82
     if (pieceCount > 1) {
       expected.toChilled = 100
       expected.toBosses = 10
@@ -79,7 +81,7 @@ describe('solveAll', () => {
     for (const order of [inventory, [...skill, ...chilled, ...poisoned]]) {
       const result = await solveAll(order, zeroStats(), [
         equippedScooter,
-        { mountKey: 'doomsteed', mountLevel: 4, isEquipped: false },
+        { mountKey: 'doomsteed', mountLevel: 0, isEquipped: false },
       ])
       const byId = new Map(inventory.map((p) => [p.id, p]))
       const equippedPieces = result.boards[0].placements.map((p) => byId.get(p.pieceId)!)
@@ -122,7 +124,7 @@ describe('solveAll', () => {
     expect(result.unusedPieceIds).toEqual([])
     const ruin = result.boards.find((b) => b.mountKey === 'ruinWarskitter')!
     expect(ruin.placements).toHaveLength(24)
-    expect(ruin.syncRate).toBe(40)
+    expect(ruin.syncRate).toBe(60)
     expect(ruin.buffsFromPieces.skillDamage).toBe(24 * 42)
     expect(ruin.buffsFromLines).toEqual(zeroStats())
   })
@@ -155,7 +157,7 @@ describe('solveAll', () => {
     )
     expect(seen).toEqual([90, 220])
     expect(result.beforeScore).toBeCloseTo(1.9, 10)
-    expect(result.afterScore).toBeCloseTo(24.2144, 10)
+    expect(result.afterScore).toBeCloseTo(24.9872, 10)
     expect(result.boards[1].buffsFromLines.vulnerability).toBe(0)
   })
 
@@ -169,8 +171,21 @@ describe('solveAll', () => {
       ],
     )
     expect(result.boards[1].buffsFromLines).toEqual(zeroStats())
-    expect(result.afterScore).toBeCloseTo(19.3952, 10)
+    expect(result.afterScore).toBeCloseTo(19.8968, 10)
   })
+
+  it('keeps pieces on the equipped board when moving would lose a stronger line bonus', async () => {
+    const inventory = Array.from({ length: 6 }, () => mk('O', 'good', 'skillDamage'))
+    const result = await solveAll(inventory, zeroStats(), [
+      { mountKey: 'ruinWarskitter', mountLevel: 0, isEquipped: true },
+      { mountKey: 'doomsteed', mountLevel: 8, isEquipped: false },
+    ])
+    expect(result.boards[0].linesFilled).toBe(2)
+    expect(result.boards[0].placements).toHaveLength(6)
+    expect(result.boards[1].placements).toHaveLength(0)
+    expect(result.afterScore).toBeCloseTo(1.6 * 1.1 * 1.4 * 1.3, 10)
+  })
+
   it('matches single-mount solve when only the equipped mount is provided', async () => {
     const inventory: Piece[] = [
       mk('O', 'legend', 'critDamage'),
@@ -216,8 +231,7 @@ describe('solveAll', () => {
   })
 
   it('orders non-equipped boards by descending sync rate', async () => {
-    // Equip scooter at 0★ (20%); hoverboard at 0★ (30%); doomsteed at 0★ (40%).
-    // Non-equipped order should be: doomsteed (40%), then hoverboard (30%).
+    // Equipped scooter comes first, followed by Doomsteed (60%) and Hoverboard (45%).
     const inventory: Piece[] = []
     for (let i = 0; i < 60; i++) inventory.push(mk('O', 'legend', 'critDamage'))
     const result = await solveAll(
@@ -238,7 +252,7 @@ describe('solveAll', () => {
   it('non-equipped board piece buffs are unscaled in BoardResult.buffsFromPieces', async () => {
     // Use a small inventory that fits on both boards combined and force the
     // first piece to land on the equipped doomsteed (12-wide). The leftover
-    // ends up on the scooter at 20% sync. BoardResult.buffsFromPieces is the
+    // ends up on the scooter at 30% sync. BoardResult.buffsFromPieces is the
     // FULL value; the "scaled" view is reconstructed at display time.
     const inventory: Piece[] = []
     for (let i = 0; i < 50; i++) inventory.push(mk('O', 'legend', 'critDamage'))

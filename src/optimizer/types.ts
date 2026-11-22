@@ -52,7 +52,7 @@ export interface BoardResult {
   mountKey: MountKey
   mountLevel: MountLevel
   isEquipped: boolean
-  /** Percentage. 100 for equipped, 20–100 for non-equipped (mount/level dependent). */
+  /** Percentage. 100 for equipped, potentially higher for non-equipped mounts. */
   syncRate: number
   placements: Placement[]
   /** Full (unscaled) piece-buff contributions from this board's placed pieces. */

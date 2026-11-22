@@ -5,6 +5,15 @@ import { StatsSummary } from './StatsSummary'
 
 afterEach(cleanup)
 
+it('uses the 200% synced piece bonus once in the After column', () => {
+  render(<StatsSummary currentStats={{ ...zeroStats(), skillDamage: 50 }}
+    buffsFromPieces={{ ...zeroStats(), skillDamage: 42 }}
+    secondaryValues={{ ...zeroStats(), skillDamage: 84 }} secondaryKind="syncRate"
+    secondaryLabel="(× 200% sync rate)" />)
+  const row = screen.getByRole('row', { name: /Skill Damage/ })
+  expect(within(row).getAllByRole('cell').slice(1).map((cell) => cell.textContent)).toEqual(['50%', '+42%', '+84%', '134%'])
+})
+
 describe('pending line bonuses', () => {
   it('shows unknown line contributions as TBA and labels totals as known values', () => {
     const props = { currentStats: zeroStats(), buffsFromPieces: { ...zeroStats(), critDamage: 10 }, secondaryValues: zeroStats(), secondaryKind: 'lines' as const, secondaryLabel: '+ Lines' }

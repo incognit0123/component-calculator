@@ -1,8 +1,11 @@
 import { BUFF_TABLE } from '../data/buffTable'
+import { MOUNTS } from '../data/mounts'
+import { MIN_PIECE_CELLS, SHAPE_ROTATIONS } from '../data/shapes'
 import { DEBUFF_PRIORITY, debuffPriorityFor, prefersDebuffs, zeroStats } from '../data/stats'
 import type { Piece, StatTotals } from '../data/types'
+import { bitFor, boardBits, countFullRows, placementsForShape } from './board'
 import { addPieceBuffs, evaluateBoards } from './scoring'
-import type { OptimizerResult } from './types'
+import type { BoardResult, OptimizerResult, Placement } from './types'
 
 interface RefineOptions {
   deadline: number
@@ -11,7 +14,72 @@ interface RefineOptions {
   onProgress?: (best: OptimizerResult, explored: number) => void
 }
 
-/** Improve the complete allocation without changing any board's shape mix. */
+function pieceMask(piece: Piece, placement: Placement, cols: number): bigint {
+  return SHAPE_ROTATIONS[piece.shape][placement.rotation].reduce(
+    (mask, [r, c]) => mask | bitFor(placement.row + r, placement.col + c, cols),
+    0n,
+  )
+}
+
+/** The equipped-first seed can leave empty slots worth more than equipped slots. */
+function movePiecesToHigherSyncBoards(
+  boards: BoardResult[],
+  byId: ReadonlyMap<string, Piece>,
+  currentStats: StatTotals,
+  opts: RefineOptions,
+): void {
+  const widths = boards.map((board) => MOUNTS[board.mountKey].cols)
+  const receivers = boards.map((_, index) => index).filter((index) =>
+    boards[index].syncRate > 100 && boards[index].placements.length * MIN_PIECE_CELLS < boardBits(widths[index]),
+  )
+  if (receivers.length === 0) return
+
+  const occupied = boards.map((board, index) => board.placements.reduce(
+    (mask, placement) => mask | pieceMask(byId.get(placement.pieceId)!, placement, widths[index]),
+    0n,
+  ))
+  let bestScore = evaluateBoards(currentStats, boards).score
+  for (const to of receivers) {
+    for (const [from, donor] of boards.entries()) {
+      if (donor.syncRate >= boards[to].syncRate) continue
+      for (const placement of donor.placements) {
+        if (performance.now() >= opts.deadline || opts.isCancelled?.()) return
+        const piece = byId.get(placement.pieceId)!
+        const slot = placementsForShape(piece.shape, widths[to]).find(({ mask }) => (mask & occupied[to]) === 0n)
+        if (!slot) continue
+
+        const source = boards[from]
+        const destination = boards[to]
+        const sourceMask = occupied[from] & ~pieceMask(piece, placement, widths[from])
+        const destinationMask = occupied[to] | slot.mask
+        const buff = BUFF_TABLE[piece.quality][piece.stat]
+        boards[from] = {
+          ...source,
+          placements: source.placements.filter((placed) => placed.pieceId !== piece.id),
+          buffsFromPieces: { ...source.buffsFromPieces, [piece.stat]: source.buffsFromPieces[piece.stat] - buff },
+          linesFilled: countFullRows(sourceMask, widths[from]),
+        }
+        boards[to] = {
+          ...destination,
+          placements: [...destination.placements, { pieceId: piece.id, rotation: slot.rotation, row: slot.row, col: slot.col }],
+          buffsFromPieces: { ...destination.buffsFromPieces, [piece.stat]: destination.buffsFromPieces[piece.stat] + buff },
+          linesFilled: countFullRows(destinationMask, widths[to]),
+        }
+        const { score } = evaluateBoards(currentStats, boards)
+        if (score <= bestScore) {
+          boards[from] = source
+          boards[to] = destination
+          continue
+        }
+        bestScore = score
+        occupied[from] = sourceMask
+        occupied[to] = destinationMask
+      }
+    }
+  }
+}
+
+/** Improve the complete allocation with score-improving moves and same-shape swaps. */
 export async function refineAllocation(
   inventory: Piece[],
   currentStats: StatTotals,
@@ -25,6 +93,7 @@ export async function refineAllocation(
     placements: b.placements.map((p) => ({ ...p })),
     buffsFromPieces: { ...b.buffsFromPieces },
   }))
+  if (!initial.truncated) movePiecesToHigherSyncBoards(boards, byId, currentStats, opts)
   const entries = boards.flatMap((b, board) => b.placements.map((placement) => ({
     board, placement, piece: byId.get(placement.pieceId)!,
   })))

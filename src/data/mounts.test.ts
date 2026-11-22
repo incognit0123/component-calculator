@@ -1,9 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { MOUNTS, MOUNT_KEYS, syncRateFor } from './mounts'
+import { MOUNTS, MOUNT_KEYS } from './mounts'
 import { maxBonusLinesForLevel } from './lineBonuses'
 import { zeroStats } from './stats'
 import { applyLineBonuses } from '../optimizer/scoring'
 import type { MountLevel } from './lineBonuses'
+
+it.each([
+  ['electricScooter', [30, 32, 35, 40, 45, 52, 60, 70, 80]],
+  ['techHoverboard', [45, 48, 52, 57, 62, 69, 75, 82, 100]],
+] as const)('uses Expo’s sync rates at each star level for %s', (key, expected) => {
+  expect(MOUNTS[key].syncRates).toEqual(expected)
+})
+
+it('uses Expo’s updated nine-level sync table for every Legendary mount', () => {
+  for (const key of ['doomsteed', 'netherflameStalker', 'ruinWarskitter'] as const) {
+    expect(MOUNTS[key].syncRates).toEqual([60, 65, 75, 92, 112, 132, 152, 175, 200])
+  }
+})
 
 describe('Netherflame Stalker', () => {
   it('is registered with the Doomsteed board and sync rates', () => {
@@ -13,7 +26,6 @@ describe('Netherflame Stalker', () => {
     expect(MOUNTS.netherflameStalker.syncRates).toEqual(
       MOUNTS.doomsteed.syncRates,
     )
-    expect(syncRateFor('netherflameStalker', 8)).toBe(100)
   })
 
   it('uses the standard line unlock levels', () => {
@@ -32,9 +44,6 @@ describe('Ruinous Warskitter', () => {
     expect(MOUNT_KEYS).toContain('ruinWarskitter')
     expect(mount.cols).toBe(MOUNTS.netherflameStalker.cols)
     expect(mount.syncRates).toEqual(MOUNTS.netherflameStalker.syncRates)
-    expect(syncRateFor('ruinWarskitter', 0)).toBe(40)
-    expect(syncRateFor('ruinWarskitter', 4)).toBe(62)
-    expect(syncRateFor('ruinWarskitter', 8)).toBe(100)
     expect(mount.name).toBe('Ruinous Warskitter')
     expect(mount.iconUrl).toBeDefined()
     expect(mount.lineBonusesPending).not.toBe(true)
