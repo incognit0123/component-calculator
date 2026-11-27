@@ -4,6 +4,7 @@ import {
 } from '../data/lineBonuses'
 import { MOUNT_KEYS, MOUNTS, syncRateFor, type MountKey } from '../data/mounts'
 import { PanelShell } from './PanelShell'
+import { MountUpgradeGuide } from './MountUpgradeGuide'
 
 interface Props {
   selectedMount: MountKey
@@ -211,7 +212,17 @@ export function MountPanel({
   )
 
   return (
-    <PanelShell title="Mount">
+    <PanelShell title="Mounts">
+      <header className="mb-4 flex flex-wrap items-center justify-end gap-2">
+        <MountUpgradeGuide
+          selectedMount={selectedMount}
+          unlocked={unlocked}
+          levels={levels}
+          onSelectMount={onSelectMount}
+          onUnlockedChange={onUnlockedChange}
+          onLevelChange={onLevelChange}
+        />
+      </header>
       <div className="flex flex-col gap-3 mt-1">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {MOUNT_KEYS.map((key) => {

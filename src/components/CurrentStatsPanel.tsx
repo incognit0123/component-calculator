@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Modal } from 'antd'
 import { SCORE_STAT_META } from '../data/stats'
 import type { StatTotals } from '../data/types'
 import { StatIcon } from './icons/StatIcon'
@@ -28,6 +29,7 @@ export function CurrentStatsPanel({ stats, onChange, onReset }: Props) {
   const [ocrLoading, setOcrLoading] = useState(false)
   const [ocrMessage, setOcrMessage] = useState<string | null>(null)
   const [isImportOpen, setIsImportOpen] = useState(false)
+  const [isSetupGuideOpen, setIsSetupGuideOpen] = useState(false)
 
   const handleUpload = async (file: File | null) => {
     if (!file) return
@@ -98,12 +100,15 @@ export function CurrentStatsPanel({ stats, onChange, onReset }: Props) {
 
   return (
     <PanelShell title="Current stats">
-      <p className="text-xs text-gray-400 -mt-2 mb-3">
-        Enter your stats <span className="text-gray-300">without</span> any mount
-        pieces or line-clear bonuses. The optimizer layers the pieces and line
-        bonuses on top.
-      </p>
       <header className="mb-4 flex flex-wrap items-center justify-end gap-2">
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          onClick={() => setIsSetupGuideOpen(true)}
+          className="app-button px-2 py-1 text-xs"
+        >
+          Setup guide
+        </button>
         <input
           ref={fileInputRef}
           type="file"
@@ -173,6 +178,29 @@ export function CurrentStatsPanel({ stats, onChange, onReset }: Props) {
           </label>
         ))}
       </div>
+
+      <Modal
+        open={isSetupGuideOpen}
+        title="Set up current stats"
+        footer={null}
+        onCancel={() => setIsSetupGuideOpen(false)}
+        styles={{
+          container: { background: 'var(--sio-accent-surface)' },
+          header: { background: 'transparent' },
+          title: { color: 'var(--sio-text)' },
+        }}
+        closeIcon={<span className="text-gray-300">×</span>}
+      >
+        <ol className="list-decimal space-y-2 pl-5 pt-2 text-sm text-gray-200">
+          <li>
+            In <a href="https://sio-tools.exp0.dev/" target="_blank" rel="noreferrer" className="text-accent underline">Expo’s calculator</a>,{' '}
+            turn off every switch under <strong>Mounts</strong>, then expand <strong>Result</strong>.
+          </li>
+          <li>
+            Copy each percentage into the matching field in <strong>Current stats</strong>, or take a screenshot of <strong>Result</strong> and use <strong>Upload</strong>.
+          </li>
+        </ol>
+      </Modal>
 
       {isImportOpen && (
         <div

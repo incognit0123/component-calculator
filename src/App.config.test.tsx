@@ -39,6 +39,51 @@ function legacyPayload(version: number) {
 }
 
 describe('configuration compatibility', () => {
+  it('opens the Expo setup instructions from the Current stats panel', () => {
+    render(<App />)
+
+    const statsPanel = screen.getByText('Current stats').closest('.ant-ribbon')!.parentElement!
+    expect(screen.queryByRole('dialog', { name: 'Set up current stats' })).not.toBeInTheDocument()
+    fireEvent.click(within(statsPanel).getByRole('button', { name: 'Setup guide' }))
+    const setupGuide = within(screen.getByRole('dialog', { name: 'Set up current stats' }))
+    expect(setupGuide.getByRole('link', { name: 'Expo’s calculator' })).toHaveAttribute('href', 'https://sio-tools.exp0.dev/')
+    const instructions = setupGuide.getByRole('list')
+    expect(instructions).toHaveTextContent('turn off every switch under Mounts, then expand Result')
+    expect(instructions).toHaveTextContent('Copy each percentage into the matching field in Current stats, or take a screenshot of Result and use Upload')
+  })
+
+  it('records unlock, equip, and upgrade steps from the Mounts panel', () => {
+    window.localStorage.setItem('mount-opt:mount-levels:v1', JSON.stringify({ ...setup().mountLevels, electricScooter: 1 }))
+    render(<App />)
+    const mountPanel = screen.getByText('Mounts', { exact: true }).closest('.ant-ribbon')!.parentElement!
+    fireEvent.click(within(mountPanel).getByRole('button', { name: 'Upgrade guide' }))
+    const guide = within(screen.getByRole('dialog', { name: 'Mount upgrade guide' }))
+    expect(guide.getByRole('button', { name: 'Legendary', pressed: true })).toBeInTheDocument()
+    const nextStep = guide.getByRole('region', { name: 'Next recommended step' })
+    const next = within(nextStep)
+    expect(next.getByRole('heading', { name: 'Unlock Ruinous Warskitter' })).toBeInTheDocument()
+    const table = within(guide.getByRole('table', { name: /Suggested upgrade order/ }))
+    const firstLegendary = table.getByRole('row', { name: /Unlock Ruinous Warskitter.*Next/ })
+    expect(within(firstLegendary).getAllByRole('cell').slice(0, 2).map((cell) => cell.textContent)).toEqual(['80', '0'])
+    expect(table.getByRole('row', { name: /Equip Ruinous Warskitter/ })).toBeInTheDocument()
+
+    fireEvent.click(next.getByRole('button', { name: 'Record unlock' }))
+    expect(next.getByRole('heading', { name: 'Equip Ruinous Warskitter' })).toBeInTheDocument()
+    fireEvent.click(next.getByRole('button', { name: 'Equip in optimizer' }))
+    expect(next.getByRole('heading', { name: 'Unlock Netherflame Stalker' })).toBeInTheDocument()
+    expect(window.localStorage.getItem('mount-opt:selected-mount:v1')).toBe(JSON.stringify('ruinWarskitter'))
+
+    fireEvent.click(guide.getByRole('button', { name: 'Excellent' }))
+    expect(next.getByRole('heading', { name: 'Unlock Tech Hoverboard' })).toBeInTheDocument()
+    fireEvent.click(guide.getByRole('button', { name: 'Better' }))
+    expect(next.getByRole('heading', { name: 'Electric Scooter to Yellow 2' })).toBeInTheDocument()
+    expect(nextStep).toHaveTextContent('25 shards · 0 cores required')
+    fireEvent.click(next.getByRole('button', { name: 'Record upgrade' }))
+
+    expect(guide.getByRole('row', { name: /Electric Scooter to Yellow 2.*Done/ })).toBeInTheDocument()
+    expect(next.getByRole('heading', { name: 'Electric Scooter to Yellow 4' })).toBeInTheDocument()
+  })
+
   it('round-trips the setup in v10 exports', () => {
     const config = setup()
     const exported = encodeConfig(config)
