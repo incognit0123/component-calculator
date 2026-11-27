@@ -110,7 +110,8 @@ For a fixed piece selection, geometry depends only on its shape distribution and
 Reads the game's **Install Component** list from screenshots or a screen recording. Pure functions take an ImageData-shaped `RgbaImage`, so the app and Node tooling share them. Never use fixed pixel coordinates; every measurement derives from the detected cell size, because devices differ in resolution.
 
 - `grid.ts` — `detectGrid` finds the lavender list panel's columns from rows of equal-width segments, then full cells from vertical runs just inside each column's left edge. It returns null for dimmed frames (a stat popup is open) and for empty lists.
-- `__fixtures__/` holds unedited phone screenshots, loaded in tests through `fixtures.ts`; never retouch one to make a test pass.
+- `classify.ts` — `classifyCell` reads shape and tier from a cell's saturated pixels. The bounding-box aspect gives the piece's unit grid, and the occupied units are matched against `SHAPE_ROTATIONS`, so L vs J follows the app's own definitions. Hue picks the colour family. A +1 tier (Excellent+1, Epic+1) is detected from the lighter diamonds at the unit centres. Cells under `LOW_CONFIDENCE` are flagged for the user to check.
+- `__fixtures__/` holds unedited phone screenshots, loaded in tests through `fixtures.ts`; never retouch one to make a test pass. `labels.json` holds every full cell's shape and tier, checked by eye against the images. `video-*.png` are frames from an H.264 phone recording, so compression artefacts stay covered.
 
 ### TypeScript config notes
 
