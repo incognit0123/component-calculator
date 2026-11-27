@@ -43,6 +43,8 @@ Instead of entering pieces one by one, use **Import from game** in the inventory
 3. For each stat in the **Filter** menu: select it, then scroll slowly to the bottom of the list.
 4. Stop the recording and upload it. Screenshots also work for lists that fit on one screen.
 
+On Android you can let [the capture helper](tools/capture/README.md) do the tapping and recording over USB.
+
 The app reads the active filter's icon and each piece's shape and tier, follows the scroll so every piece is counted once, and opens **Bulk edit** with the result for you to check before applying. Stats you didn't record keep their current pieces. The recording is processed in your browser and never uploaded.
 
 ## Domain reference

@@ -1,4 +1,5 @@
 import type { StatKey } from '../../data/types'
+import { findBlobs } from './image'
 import type { Rect, RgbaImage } from './image'
 
 export type FilterReading = { filter: StatKey | 'all'; confidence: number; box: Rect }
@@ -22,7 +23,7 @@ export const TEMPLATES: Record<StatKey | 'all', string> = {
 }
 
 /** The filter box's orange carries no blue, unlike every piece colour, which keeps pieces out of the search. */
-function isFilterOrange(d: RgbaImage['data'], i: number): boolean {
+export function isFilterOrange(d: RgbaImage['data'], i: number): boolean {
   return d[i] >= 240 && d[i + 1] >= 130 && d[i + 1] <= 165 && d[i + 2] <= 20
 }
 
@@ -31,50 +32,12 @@ function isFilterOrange(d: RgbaImage['data'], i: number): boolean {
  * The open filter panel highlights its selected icon in the same orange, always above the box, so the lowest square wins.
  */
 export function locateFilterBox(img: RgbaImage): Rect | null {
-  const step = Math.max(1, Math.round(img.width / 600))
-  const w = Math.ceil(img.width / step)
-  const h = Math.ceil(img.height / step)
-  const mask = new Uint8Array(w * h)
-  for (let y = 0; y < h; y += 1) {
-    for (let x = 0; x < w; x += 1) {
-      if (isFilterOrange(img.data, (y * step * img.width + x * step) * 4)) mask[y * w + x] = 1
-    }
-  }
-  const minSide = img.width * 0.04
   let best: Rect | null = null
-  const stack: number[] = []
-  for (let start = 0; start < mask.length; start += 1) {
-    if (mask[start] !== 1) continue
-    mask[start] = 2
-    stack.push(start)
-    let n = 0
-    let x0 = Infinity
-    let y0 = Infinity
-    let x1 = -1
-    let y1 = -1
-    while (stack.length > 0) {
-      const p = stack.pop()!
-      const px = p % w
-      const py = (p - px) / w
-      n += 1
-      if (px < x0) x0 = px
-      if (px > x1) x1 = px
-      if (py < y0) y0 = py
-      if (py > y1) y1 = py
-      for (const q of [p - 1, p + 1, p - w, p + w]) {
-        if (q < 0 || q >= mask.length || mask[q] !== 1) continue
-        if ((q === p - 1 || q === p + 1) && Math.floor(q / w) !== py) continue
-        mask[q] = 2
-        stack.push(q)
-      }
-    }
-    const bw = (x1 - x0 + 1) * step
-    const bh = (y1 - y0 + 1) * step
-    const aspect = bw / bh
-    if (bw < minSide || aspect < 0.85 || aspect > 1.18) continue
-    if ((n * step * step) / (bw * bh) < 0.4) continue
-    const rect = { x: x0 * step, y: y0 * step, w: bw, h: bh }
-    if (!best || rect.y > best.y) best = rect
+  for (const blob of findBlobs(img, isFilterOrange)) {
+    const { w, h } = blob.rect
+    const aspect = w / h
+    if (w < img.width * 0.04 || aspect < 0.85 || aspect > 1.18 || blob.fill < 0.4) continue
+    if (!best || blob.rect.y > best.y) best = blob.rect
   }
   return best
 }

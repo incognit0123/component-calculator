@@ -24,3 +24,5 @@ dist-ssr
 *.sw?
 
 debugging-files/
+
+tools/capture/out/

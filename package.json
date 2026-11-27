@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "capture": "tsx tools/capture/capture.ts"
   },
   "dependencies": {
     "@ant-design/icons": "^6.2.2",
@@ -40,6 +41,7 @@
     "jsdom": "^29.0.2",
     "postcss": "^8.5.10",
     "tailwindcss": "^3.4.19",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.2",
     "vite": "^8.0.10",

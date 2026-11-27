@@ -108,7 +108,7 @@ For a fixed piece selection, geometry depends only on its shape distribution and
 
 ### Inventory scan (`src/utils/inventoryScan/`)
 
-Reads the game's **Install Component** list from screenshots or a screen recording. Pure functions take an ImageData-shaped `RgbaImage`, so the app and Node tooling share them. Never use fixed pixel coordinates; every measurement derives from the detected cell size, because devices differ in resolution.
+Reads the game's **Install Component** list from screenshots or a screen recording. Pure functions take an ImageData-shaped `RgbaImage`, so the app and Node tooling share them. `image.ts` holds the shared pixel helpers (`crop`, `resize`, `findBlobs`). Never use fixed pixel coordinates; every measurement derives from the detected cell size, because devices differ in resolution.
 
 - `grid.ts` — `detectGrid` finds the lavender list panel's columns from rows of equal-width segments, then full cells from vertical runs just inside each column's left edge. It returns null for dimmed frames (a stat popup is open) and for empty lists.
 - `classify.ts` — `classifyCell` reads shape and tier from a cell's saturated pixels. The bounding-box aspect gives the piece's unit grid, and the occupied units are matched against `SHAPE_ROTATIONS`, so L vs J follows the app's own definitions. Hue picks the colour family. A +1 tier (Excellent+1, Epic+1) is detected from the lighter diamonds at the unit centres. Cells under `LOW_CONFIDENCE` are flagged for the user to check.
@@ -117,6 +117,10 @@ Reads the game's **Install Component** list from screenshots or a screen recordi
 - `frames.ts` — browser-only decoding: `decodeImage` for screenshots, `forEachVideoFrame` for recordings. It plays the video with `requestVideoFrameCallback` and slows playback while the scanner is busy; per-frame seeking, kept only as a fallback, re-decodes from the last keyframe for every frame. jsdom has neither video nor canvas, so it is verified in a real browser.
 - `scanFiles.ts` runs the frames of the chosen files through one scanner. `importCounts.ts`'s `planImport` turns the user's per-segment stat choices into pieces for Bulk edit. Stats that were not recorded keep their current pieces, so a partial recording cannot wipe the rest of the inventory.
 - `__fixtures__/` holds unedited phone screenshots, loaded in tests through `fixtures.ts`; never retouch one to make a test pass. `labels.json` holds every full cell's shape and tier, checked by eye against the images. `video-*.png` are frames from an H.264 phone recording, so compression artefacts stay covered.
+
+### Capture helper (`tools/capture/`)
+
+`npm run capture` drives an Android phone over adb and records the filter-by-filter scroll that the importer reads. It reuses `inventoryScan` (and `findPanelIcons` for the open filter menu) to locate every tap on a fresh screenshot. It aborts if the mount board gains colour, which means a drag installed a component. It must not import `src/data/stats.ts`, whose image imports Node cannot load. `tsconfig.node.json` typechecks `tools/`.
 
 ### TypeScript config notes
 

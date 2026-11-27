@@ -54,3 +54,54 @@ export function resize(img: RgbaImage, width: number, height: number): RgbaImage
   }
   return { width, height, data }
 }
+
+export interface PixelBlob {
+  rect: Rect
+  /** Share of the bounding box covered by matching pixels. */
+  fill: number
+}
+
+/** 4-connected regions of pixels matching `match`, sampled on a grid of roughly 600 columns. */
+export function findBlobs(img: RgbaImage, match: (d: RgbaImage['data'], i: number) => boolean): PixelBlob[] {
+  const step = Math.max(1, Math.round(img.width / 600))
+  const w = Math.ceil(img.width / step)
+  const h = Math.ceil(img.height / step)
+  const mask = new Uint8Array(w * h)
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      if (match(img.data, (y * step * img.width + x * step) * 4)) mask[y * w + x] = 1
+    }
+  }
+  const blobs: PixelBlob[] = []
+  const stack: number[] = []
+  for (let start = 0; start < mask.length; start += 1) {
+    if (mask[start] !== 1) continue
+    mask[start] = 2
+    stack.push(start)
+    let n = 0
+    let x0 = Infinity
+    let y0 = Infinity
+    let x1 = -1
+    let y1 = -1
+    while (stack.length > 0) {
+      const p = stack.pop()!
+      const px = p % w
+      const py = (p - px) / w
+      n += 1
+      if (px < x0) x0 = px
+      if (px > x1) x1 = px
+      if (py < y0) y0 = py
+      if (py > y1) y1 = py
+      for (const q of [p - 1, p + 1, p - w, p + w]) {
+        if (q < 0 || q >= mask.length || mask[q] !== 1) continue
+        if ((q === p - 1 || q === p + 1) && Math.floor(q / w) !== py) continue
+        mask[q] = 2
+        stack.push(q)
+      }
+    }
+    const bw = (x1 - x0 + 1) * step
+    const bh = (y1 - y0 + 1) * step
+    blobs.push({ rect: { x: x0 * step, y: y0 * step, w: bw, h: bh }, fill: (n * step * step) / (bw * bh) })
+  }
+  return blobs
+}
