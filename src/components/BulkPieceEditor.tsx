@@ -16,11 +16,13 @@ interface Props {
   onApply: (pieces: Piece[]) => void
   /** Pieces the last run left unplaced; dropped first when counts decrease. */
   unusedIds?: Set<string>
+  /** Starting draft in place of the live inventory's counts, e.g. from a game import. */
+  initialCounts?: Counts
 }
 
 const MAX_COUNT = 99
 
-type Counts = Record<string, number>
+export type Counts = Record<string, number>
 
 const cellKey = (stat: StatKey, quality: QualityTier, shape: ShapeKey) =>
   `${stat}|${quality}|${shape}`
@@ -79,12 +81,13 @@ export function BulkPieceEditor({
   onClose,
   onApply,
   unusedIds,
+  initialCounts,
 }: Props) {
-  // The parent mounts this only while open, so the draft is always seeded
-  // fresh from the live inventory (never carried over from a previous session)
-  // and Apply treats it as the complete desired inventory, not a diff.
-  const [draft, setDraft] = useState<Counts>(() => countPieces(pieces))
-  const [stat, setStat] = useState<StatKey>('critDamage')
+  // The parent mounts this only while open, so the draft is seeded afresh on every open and never carried over; Apply treats it as the complete desired inventory, not a diff.
+  const [draft, setDraft] = useState<Counts>(() => initialCounts ?? countPieces(pieces))
+  const [stat, setStat] = useState<StatKey>(
+    () => STATS.find((s) => Object.entries(draft).some(([k, n]) => n > 0 && k.startsWith(`${s.key}|`)))?.key ?? 'critDamage',
+  )
 
   const statTotals = useMemo(() => {
     const totals: Record<string, number> = {}
@@ -122,11 +125,19 @@ export function BulkPieceEditor({
           </button>
         </div>
 
-        <p className="text-xs text-gray-400 -mt-2">
-          Pick a stat, then enter how many pieces of each shape and quality you
-          own. Counts start from your current inventory; nothing changes until
-          you press Apply.
-        </p>
+        {initialCounts ? (
+          <p className="text-xs text-gray-400 -mt-2">
+            Counts come from the game import and replace your inventory of{' '}
+            {pieces.length} piece{pieces.length === 1 ? '' : 's'} when you press
+            Apply. Check them against the game before applying.
+          </p>
+        ) : (
+          <p className="text-xs text-gray-400 -mt-2">
+            Pick a stat, then enter how many pieces of each shape and quality you
+            own. Counts start from your current inventory; nothing changes until
+            you press Apply.
+          </p>
+        )}
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {STATS.map((s) => (

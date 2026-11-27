@@ -34,6 +34,17 @@ Pieces, current stats, equipped mount, per-mount unlocked status, per-mount star
 
 You can also export your full setup as a single `mount-opt:v10:…` string and import it on another device, including pre-mount Vulnerability and Ruin's unlock status and star level. Older v1–v9 strings still import with Vulnerability set to zero; v1–v8 default Ruin to locked at level zero, and pre-v7 strings also default Netherflame Stalker to locked. Existing local saves and profiles preserve their mounts, levels, stats and inventory. Retired search-mode preferences are ignored.
 
+## Importing components from the game
+
+Instead of entering pieces one by one, use **Import from game** in the inventory panel:
+
+1. In the game, uninstall all components, so the **Install Component** list holds every piece. Installed pieces don't show their stat without tapping each one.
+2. Open **Install Component** and start your phone's screen recorder.
+3. For each stat in the **Filter** menu: select it, then scroll slowly to the bottom of the list.
+4. Stop the recording and upload it. Screenshots also work for lists that fit on one screen.
+
+The app reads the active filter's icon and each piece's shape and tier, follows the scroll so every piece is counted once, and opens **Bulk edit** with the result for you to check before applying. Stats you didn't record keep their current pieces. The recording is processed in your browser and never uploaded.
+
 ## Domain reference
 
 - **Component stats (8):** `critDamage`, `skillDamage`, `shieldDamage`, `toWeakened`, `toPoisoned`, `toChilled`, `laceration`, `toBosses`. **Vulnerability** is an additional player/mount stat; there are no Vulnerability components.

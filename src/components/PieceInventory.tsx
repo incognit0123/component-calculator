@@ -25,6 +25,8 @@ import {
   sortByShapeQuality,
 } from '../utils/sortPieces'
 import { BulkPieceEditor } from './BulkPieceEditor'
+import type { Counts } from './BulkPieceEditor'
+import { InventoryImportDialog } from './InventoryImportDialog'
 import { ConfirmDialog } from './ConfirmDialog'
 import { PieceCard } from './PieceCard'
 import { PieceEditor } from './PieceEditor'
@@ -95,6 +97,8 @@ export function PieceInventory({
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<Piece | null>(null)
   const [bulkOpen, setBulkOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [importedCounts, setImportedCounts] = useState<Counts | undefined>()
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
   const [collapsed, setCollapsed] = usePersistedState<boolean>(
     COLLAPSED_KEY,
@@ -202,6 +206,13 @@ export function PieceInventory({
               Sort ▾
             </button>
           </Dropdown>
+          <button
+            type="button"
+            onClick={() => setImportOpen(true)}
+            className="app-button bg-[#2f354a] hover:bg-[#3b435d]"
+          >
+            Import from game
+          </button>
           <button
             type="button"
             onClick={() => setBulkOpen(true)}
@@ -321,12 +332,27 @@ export function PieceInventory({
           page first if you want a copy you can import back.
         </p>
       </ConfirmDialog>
+      {importOpen && (
+        <InventoryImportDialog
+          pieces={pieces}
+          onClose={() => setImportOpen(false)}
+          onReview={(counts) => {
+            setImportOpen(false)
+            setImportedCounts(counts)
+            setBulkOpen(true)
+          }}
+        />
+      )}
       {bulkOpen && (
         <BulkPieceEditor
           pieces={pieces}
-          onClose={() => setBulkOpen(false)}
+          onClose={() => {
+            setBulkOpen(false)
+            setImportedCounts(undefined)
+          }}
           onApply={onChange}
           unusedIds={unusedIds}
+          initialCounts={importedCounts}
         />
       )}
       <PieceEditor
