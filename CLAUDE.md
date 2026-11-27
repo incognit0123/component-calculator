@@ -105,6 +105,13 @@ For a fixed piece selection, geometry depends only on its shape distribution and
 - **Export format:** strings are prefixed `mount-opt:vN:`. Current is **v10**, storing five-key `lv` and `u` maps including Ruin plus a required non-negative `vu` for pre-mount Vulnerability. Keep the existing `s` array in its frozen eight-component-stat order. v1–v9 remain supported with Vulnerability defaulting to zero; v1–v8 default Ruin to locked at level 0, and pre-v7 also defaults Netherflame to locked. v8's retired `g` flag is validated and ignored. Current encoders iterate `MOUNT_KEYS`; legacy v7/v8 decoders use the frozen four-key schema. Equipped mounts are force-unlocked on modern imports. Serialization, validation and localStorage migrations live in `src/utils/config.ts`.
 - `OptimizerResult` and `BoardResult` are fully serializable (no BigInts) so they cross the worker boundary cleanly. Don't put `bigint` in any worker-bound type.
 
+### Inventory scan (`src/utils/inventoryScan/`)
+
+Reads the game's **Install Component** list from screenshots or a screen recording. Pure functions take an ImageData-shaped `RgbaImage`, so the app and Node tooling share them. Never use fixed pixel coordinates; every measurement derives from the detected cell size, because devices differ in resolution.
+
+- `grid.ts` — `detectGrid` finds the lavender list panel's columns from rows of equal-width segments, then full cells from vertical runs just inside each column's left edge. It returns null for dimmed frames (a stat popup is open) and for empty lists.
+- `__fixtures__/` holds unedited phone screenshots, loaded in tests through `fixtures.ts`; never retouch one to make a test pass.
+
 ### TypeScript config notes
 
 `tsconfig.app.json` has `verbatimModuleSyntax: true` and `erasableSyntaxOnly: true`. This means:
